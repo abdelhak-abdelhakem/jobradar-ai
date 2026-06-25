@@ -1,4 +1,4 @@
-# TODO: Future implementation# JobRadar AI 🎯
+# JobRadar AI 🎯
 
 An autonomous LangGraph agent that scrapes Paris AI job boards daily, scores postings against my profile via hybrid RAG retrieval, drafts personalized cover letters for strong matches, and delivers a ranked digest to Telegram.
 

@@ -1,0 +1,19 @@
+# Environments & Secrets
+.env
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data, Vector Databases & Personal Profile
+data/chroma/
+data/profile/
+
+# IDEs & OS Files
+.vscode/
+.idea/
+.DS_Store

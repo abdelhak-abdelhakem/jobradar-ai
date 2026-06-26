@@ -9,45 +9,59 @@ llm = ChatOpenAI(model=LLM_MODEL, temperature=LLM_TEMPERATURE)
 structured_llm = llm.with_structured_output(JobMatch)
 
 def retrieve_profile_node(state: JobRadarState) -> JobRadarState:
-    """"""
-    scored_jobs = []
+    """Retrieves profile chunks for new jobs in parallel."""
     list_of_new_jobs = state["new_jobs"]
-    for new_job in list_of_new_jobs:
-        chunks = ensemble_retriever.invoke(new_job.page_content[:500])
-        scored_jobs.append({
-            "doc": new_job,        # original job document
-            "chunks": chunks       # retrieved profile chunks
-        })
+    inputs = [new_job.page_content[:500] for new_job in list_of_new_jobs]
+    all_chunks = ensemble_retriever.batch(inputs)
+    scored_jobs = [
+        {
+            "doc": job,          
+            "chunks": chunks    
+        }
+        for job, chunks in zip(list_of_new_jobs, all_chunks)
+    ]
     state["scored_jobs"] = scored_jobs
     return state
 
+
 def score_job_node(state: JobRadarState) -> JobRadarState:
-    """"""
-    updated_scored_jobs = []
-    for item in state["scored_jobs"]:
-        # item has doc + chunks already
-        # invoke structured_llm, write job_match back into item
-        context = item["chunks"]
-        question = item["doc"]
-        
-        template = """You are a technical recruiter. Evaluate this candidate profile against the job description and return a structured assessment.
+    """Scores jobs in parallel using the LLM."""
+    template = """You are a technical recruiter. Evaluate this candidate profile against the job description and return a structured assessment.
     
         Candidate Profile and Project Readme:
         {context}
     
         Question: {question}
         """
-        prompt = PromptTemplate.from_template(template)
+    prompt = PromptTemplate.from_template(template)
+    rag_chain = prompt | structured_llm
 
-        formatted_context = "\n\n".join(doc.page_content for doc in context)
-        rag_chain = prompt | structured_llm
-        answer = rag_chain.invoke({"context": formatted_context, "question": question.page_content})
+    inputs = []
+    all_chunks = []
+    all_doc = []
+    for item in state["scored_jobs"]:
+        context = item["chunks"]
+        question = item["doc"]
+
+        all_chunks.append(context)
+        all_doc.append(question)
+
+        formatted_context = "\n\n".join(c.page_content for c in context)
+        inputs.append(
+            {"context": formatted_context, 
+            "question": question.page_content}
+            )
         
-        updated_scored_jobs.append({
+    answers = rag_chain.batch(inputs)
+
+    updated_scored_jobs = [
+        {
             "doc": question,       # original job document
             "chunks": context,     # retrieved profile chunks
             "job_match": answer    # structured_llm answer
-        })
-        
+        }
+        for question, context,answer in zip(all_doc, all_chunks,answers)
+    ]
+
     state["scored_jobs"] = updated_scored_jobs
     return state

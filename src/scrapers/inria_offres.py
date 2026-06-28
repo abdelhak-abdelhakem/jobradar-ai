@@ -2,7 +2,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from src.config import INRIA_BASE_URL, INRIA_SEARCH_URL, SCRAPER_HEADERS
+from src.config import INRIA_BASE_URL, INRIA_SEARCH_URL, SCRAPER_HEADERS, SEARCH_KEYWORDS
 
 def scrape_job_details(url, headers):
     """Fetches the individual job page and extracts the full description."""
@@ -25,8 +25,8 @@ def scrape_job_details(url, headers):
         print(f"  [!] Error fetching details for {url}: {e}")
         return "Error fetching description."
 
-def get_inria_jobs():
-    """Scrapes all jobs from the Inria job board and returns a structured list."""
+def get_inria_jobs(keywords=SEARCH_KEYWORDS):
+    """Scrapes job listings, filters using regex word boundaries, and returns a structured list."""
     print(f"Fetching job listings from: {INRIA_SEARCH_URL}...\n")
     try:
         response = requests.get(INRIA_SEARCH_URL, headers=SCRAPER_HEADERS)
@@ -37,20 +37,28 @@ def get_inria_jobs():
 
     soup = BeautifulSoup(response.text, 'html.parser')
     job_listings = []
+    
+    # Compile regex patterns with word boundaries (\b) for each keyword
+    # re.IGNORECASE removes the need for manual .lower() conversion
+    patterns = [re.compile(rf'\b{re.escape(kw)}\b', re.IGNORECASE) for kw in keywords]
 
-    # 1. Gather all unique job URLs and map them to their titles
+    # 1. Gather all unique job URLs and filter them by title
     job_dict = {}
     for link in soup.find_all('a', href=True):
         href = link['href']
+        
         if "/public/classic/en/offres/" in href and any(char.isdigit() for char in href):
-            job_url = urljoin(INRIA_BASE_URL, href)
             job_title = link.get_text(strip=True)
-            if job_url not in job_dict:
-                job_dict[job_url] = job_title
+            
+            # THE FIX: Check if any regex pattern matches as a distinct word
+            if any(pattern.search(job_title) for pattern in patterns):
+                job_url = urljoin(INRIA_BASE_URL, href)
+                if job_url not in job_dict:
+                    job_dict[job_url] = job_title
 
-    print(f"Found {len(job_dict)} unique jobs. Starting deep scrape...\n")
+    print(f"Found {len(job_dict)} strictly relevant jobs matching your keywords. Starting deep scrape...\n")
 
-    # 2. Scrape full details for each job
+    # 2. Scrape full details ONLY for the filtered jobs
     for idx, (job_url, job_title) in enumerate(job_dict.items(), 1):
         print(f"[{idx}/{len(job_dict)}] Scraping: {job_title}")
         job_id = job_url.split('/')[-1]
@@ -63,6 +71,6 @@ def get_inria_jobs():
             'description': full_description
         })
 
-        time.sleep(0.5)  # be polite to the server
+        time.sleep(0.5)
         
     return job_listings

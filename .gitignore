@@ -11,7 +11,10 @@ __pycache__/
 
 # Data, Vector Databases & Personal Profile
 data/chroma/
-data/profile/
+data/profile/*
+!data/profile/example_profile.md
+data/*.sqlite3
+data/*.csv
 
 # IDEs & OS Files
 .vscode/

@@ -1,14 +1,10 @@
 # JobRadar AI 🎯
 
-An autonomous LangGraph agent that scrapes Paris AI job boards daily, scores postings against my profile via hybrid RAG retrieval, drafts personalized cover letters for strong matches, and delivers a ranked digest to Telegram.
+An LLM pipeline built with LangGraph that finds AI internships on the Inria job board, scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
 
-> **Status:** Prototype complete — multi-source scraping and EC2 deployment in progress.
+Most of the flow is fixed. The agent-style part is the letter loop, where an LLM check decides whether each letter goes back for revision.
 
----
-
-## Demo
-
-One pipeline run: **153 jobs scraped → scored → 11 cover letters drafted → Telegram digest delivered** in a single autonomous execution for **$0.23**.
+> **Status:** Working prototype with one job source. Letters are drafts for me to review, and nothing is sent to employers.
 
 ---
 
@@ -16,150 +12,111 @@ One pipeline run: **153 jobs scraped → scored → 11 cover letters drafted →
 
 ```
 START
-  → scrape_node          # scrapes Inria job board (full detail pages)
-  → dedup_node           # skips already-seen jobs via ID-based Chroma check
-  → retrieve_profile_node # hybrid RAG retrieval (BM25 + embeddings) over CV
-  → score_job_node        # LLM scores each job → JobMatch (score, rationale, skills)
-  → [score ≥ 70?]
-        yes → draft_letter_node   # RAG-augmented cover letter generation
+  → scrape_node            # finds internships on the Inria board and fetches full pages
+  → dedup_node             # drops jobs already finished in an earlier run (SQLite)
+  → load_profile_node      # loads the whole CV
+  → score_job_node         # LLM scores each job → JobMatch (rationale, skills, score)
+  → [any score ≥ 70?]
         no  → notify_telegram_node
-  → notify_telegram_node  # formats and pushes digest to Telegram
+        yes → draft_letter_node
+                → verify_letter_node   # checks each letter's claims against the CV
+                → [unsupported claims and revisions left?]
+                      yes → revise_letter_node → back to verify_letter_node
+                      no  → notify_telegram_node
+  → notify_telegram_node   # sends the ranked digest and letters, then records finished jobs
   → END
 ```
+
+### Design decisions
+
+- **Whole CV instead of RAG:** the first version retrieved up to 6 chunks of 300 characters, under a third of a 6 KB CV. Letters came back signed "Nom du candidat" and scores were based on fragments, so the LLM now gets the whole CV.
+- **Jobs are recorded only once they're handled:** failed scrapes, scores, letters, and Telegram sends are all retried on the next run.
+- **The internship requirement is enforced in code:** non-internships are capped at a score of 40, whatever the LLM returns.
+- **Failures stay contained:** one failed LLM call doesn't stop the batch.
 
 ### Stack
 
 | Layer | Technology |
 |---|---|
-| Agent orchestration | LangGraph |
-| LLM | OpenAI GPT (gpt-5-nano) |
-| Embeddings | text-embedding-3-small |
-| Vector store | ChromaDB (persistent) |
-| Hybrid retrieval | BM25 + ChromaDB + EnsembleRetriever |
+| Orchestration | LangGraph |
+| LLM | OpenAI gpt-5-nano |
 | Structured output | Pydantic + `with_structured_output()` |
-| Observability | LangSmith |
+| Job history | SQLite |
+| Observability | LangSmith (optional) |
 | Notifications | Telegram Bot API |
 | Scraping | requests + BeautifulSoup |
-
----
-
-## Project Structure
-
-```
-jobradar-ai/
-├── data/
-│   ├── chroma/                  # persistent vector stores
-│   └── profile/
-│       └── my_profile.md        # CV and project descriptions (RAG source)
-├── scheduler/
-│   └── run_daily.py             # entrypoint — runs the full pipeline
-└── src/
-    ├── agents/
-    │   ├── graph.py             # LangGraph graph definition
-    │   ├── state.py             # JobRadarState TypedDict
-    │   └── nodes/
-    │       ├── scrape.py        # Inria scraper with full detail pages
-    │       ├── dedup.py         # ID-based deduplication against Chroma
-    │       ├── score.py         # hybrid retrieval + LLM scoring
-    │       ├── draft_letter.py  # RAG-augmented cover letter generation
-    │       └── notify.py        # Telegram digest formatter and sender
-    ├── rag/
-    │   ├── ingest.py            # chunks and embeds profile documents
-    │   ├── retriever.py         # EnsembleRetriever (BM25 + Chroma)
-    │   └── vectorstore.py       # ChromaDB client wrapper
-    ├── scrapers/
-    │   ├── inria_offres.py      # Inria jobs scraper ✅
-    │   ├── linkedin.py          # coming soon
-    │   └── welcome_to_jungle.py # coming soon
-    ├── api/
-    │   └── main.py              # FastAPI dashboard (coming soon)
-    ├── evaluation/
-    │   └── ragas_eval.py        # scoring precision evaluation (coming soon)
-    ├── db/
-    │   ├── models.py            # SQLModel: JobPosting, Application, ScoreLog
-    │   └── session.py
-    ├── utils/
-    │   └── telegram.py          # send_message() helper
-    └── config.py                # centralized configuration
-```
-
----
-
-## Pipeline Results (Prototype Run — June 25, 2026)
-
-| Metric | Value |
-|---|---|
-| Jobs scraped (Inria) | 153 |
-| Duplicates skipped | 0 (first run) |
-| Jobs scored | 153 |
-| Jobs with score ≥ 70 | 11 |
-| Cover letters drafted | 11 |
-| Telegram notifications sent | 153 |
-| Total tokens | 897,700 |
-| Total cost | $0.2339 |
-| Runtime | 70 min (sequential — `.batch()` optimization pending) |
+| Tests and CI | pytest + GitHub Actions |
 
 ---
 
 ## Setup
 
-**1. Clone and install**
 ```bash
 git clone https://github.com/abdelhak-abdelhakem/jobradar-ai.git
 cd jobradar-ai
 pip install -r requirements.txt
+
+cp .env.example .env                                       # then fill in your keys
+cp data/profile/example_profile.md data/profile/my_profile.md   # then replace with your CV
+
+python -m scheduler.run_daily
 ```
 
-**2. Environment variables**
+The first run scores every matching job. Later runs only process new ones. A run sends a Telegram message even when nothing matches, so you can tell a quiet day from a broken pipeline. It runs once per call, so use cron or similar to run it daily.
 
-Create a `.env` file:
-```env
-OPENAI_API_KEY=your_key
-TELEGRAM_BOT_TOKEN=your_token
-CHAT_ID=your_chat_id
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=your_langsmith_key
-LANGCHAIN_PROJECT=jobradar-ai
-```
+## Tests
 
-**3. Ingest your profile**
+The tests run the real graph with the LLM, Telegram, and the job board faked, so they need no API keys and cost nothing.
+
 ```bash
-python src/rag/ingest.py
+pip install -r requirements-dev.txt
+pytest
 ```
 
-**4. Run the pipeline**
+## Measuring scoring quality
+
+Compare the LLM's scores with your own judgement:
+
 ```bash
-python scheduler/run_daily.py
+python -m src.evaluation.evaluate_scoring export data/eval_labels.csv
+# fill in the label column: 1 = I'd apply, 0 = I wouldn't (aim for 30 to 50 jobs)
+python -m src.evaluation.evaluate_scoring report data/eval_labels.csv
 ```
+
+This reports precision@k and rank correlation. No results yet, because the jobs still need labelling.
+
+---
+
+## Earlier results
+
+The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, drafted 11 letters, and used 897,700 tokens for $0.23 in 70 minutes. That version had no batching, keyword filter, or letter check, so these numbers don't describe the current pipeline.
 
 ---
 
 ## Roadmap
 
-- [x] Inria scraper with full detail page extraction
-- [x] ID-based deduplication against ChromaDB
-- [x] Hybrid RAG retrieval (BM25 + embeddings) over candidate profile
-- [x] Structured job scoring via Pydantic + LangGraph
-- [x] Conditional cover letter drafting (score ≥ 70)
-- [x] Telegram digest notifications
-- [x] LangSmith observability
-- [ ] `.batch()` parallelization (target: < 10 min runtime)
-- [ ] Welcome to the Jungle scraper
-- [ ] LinkedIn scraper
-- [ ] Cross-source embedding dedup
-- [ ] FastAPI dashboard (`GET /jobs`, `GET /jobs/{id}/letter`)
-- [ ] SQLModel job tracking database
-- [ ] RAGAS-style scoring evaluation
-- [ ] AWS EC2 daily scheduler deployment
+- [x] Inria scraper with full page extraction
+- [x] Dedup across runs
+- [x] Structured job scoring
+- [x] Cover letter drafting with a claim check and revision loop
+- [x] Ranked Telegram digest
+- [x] Tests and CI
+- [ ] Label jobs and publish scoring results
+- [ ] Re-measure runtime and cost
+- [ ] Telegram approval step with a LangGraph checkpointer and `interrupt`
+- [ ] More job sources that allow automated access
+- [ ] Job normalization and dedup across sources
+- [ ] Dashboard and application tracking
+- [ ] Daily scheduled deployment
 
 ---
 
 ## About
 
-Built as the capstone project of a 4-week LangGraph preparation program, completed in 15 days (June 10–25, 2026). Preceded by:
+Built as the capstone project of a 4-week LangGraph preparation program, with the first version completed in 15 days (June 10–25, 2026). Preceded by:
 
 - **[learning-langgraph](https://github.com/abdelhak-abdelhakem/learning-langgraph)** — exercises and mini-projects covering LangGraph, Pydantic structured output, hybrid RAG, web scraping, and Telegram integration
-- **[Hasnaoui Bot](https://github.com/abdelhak-abdelhakem)** — production enterprise RAG chatbot (Context Precision 0.892, Answer Relevancy 0.702, $0.00079/query) that established the hybrid retrieval pattern used here
+- **[Hasnaoui Bot](https://github.com/abdelhak-abdelhakem)** — production enterprise RAG chatbot (Context Precision 0.892, Answer Relevancy 0.702, $0.00079/query)
 
 ---
 

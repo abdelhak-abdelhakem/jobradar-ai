@@ -1,0 +1,109 @@
+import pytest
+from langchain_core.runnables import RunnableLambda
+
+from src.agents.nodes import draft_letter, score
+from src.agents.state import JobMatch, LetterCheck
+from src.utils import telegram
+
+
+def make_job(job_id="1", title="Internship in NLP", description="An AI internship.") -> dict:
+    return {
+        "source": "inria",
+        "id": job_id,
+        "title": title,
+        "company": "Inria",
+        "url": f"https://jobs.example/{job_id}",
+        "description": description,
+    }
+
+
+def make_match(score_value=80, is_internship=True) -> JobMatch:
+    return JobMatch(
+        rationale="Good overlap.",
+        matched_skills=["Python"],
+        missing_skills=[],
+        is_internship=is_internship,
+        match_score=score_value,
+    )
+
+
+class FakeResponse:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self.ok = status_code < 400
+        self.text = str(payload or {})
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
+
+
+class FakeWorld:
+    """Stands in for every external service: LLM, Telegram, and the job board."""
+
+    def __init__(self):
+        self.jobs = [make_job()]
+        self.scores = {}            # text in the job -> score, or an Exception to raise
+        self.calls = {"score": 0, "draft": 0, "check": 0, "revise": 0}
+        self.letter = "Dear team,\n\nA truthful letter.\n\nAbdelhak"
+        self.unsupported = {}       # text in the letter -> claims
+        self.revised_letter = "Dear team,\n\nA revised letter.\n\nAbdelhak"
+        self.draft_error = False
+        self.sent = []
+        self.telegram_up = True
+
+    def fake_score(self, inputs):
+        self.calls["score"] += 1
+        for text, value in self.scores.items():
+            if text in inputs["job"]:
+                if isinstance(value, Exception):
+                    raise value
+                if isinstance(value, JobMatch):
+                    return value
+                return make_match(value)
+        return make_match()
+
+    def fake_draft(self, inputs):
+        self.calls["draft"] += 1
+        if self.draft_error:
+            raise RuntimeError("draft failed")
+        return self.letter
+
+    def fake_check(self, inputs):
+        self.calls["check"] += 1
+        claims = []
+        for text, found in self.unsupported.items():
+            if text in inputs["letter"]:
+                claims.extend(found)
+        return LetterCheck(unsupported_claims=claims)
+
+    def fake_revise(self, inputs):
+        self.calls["revise"] += 1
+        return self.revised_letter
+
+    def fake_post(self, url, json, timeout):
+        if not self.telegram_up:
+            return FakeResponse(400, {"description": "Bad Request"})
+        self.sent.append(json["text"])
+        return FakeResponse()
+
+
+@pytest.fixture
+def world(monkeypatch, tmp_path):
+    fake = FakeWorld()
+
+    profile = tmp_path / "profile.md"
+    profile.write_text("# Abdelhak\nPython, NLP.", encoding="utf-8")
+    monkeypatch.setattr("src.config.SEEN_JOBS_DB", str(tmp_path / "seen.sqlite3"))
+    monkeypatch.setattr(score, "PROFILE_PATH", str(profile))
+
+    monkeypatch.setattr("src.agents.nodes.scrape.get_inria_jobs", lambda: fake.jobs)
+    monkeypatch.setattr(score, "_scoring_chain", lambda: RunnableLambda(fake.fake_score))
+    monkeypatch.setattr(draft_letter, "_draft_chain", lambda: RunnableLambda(fake.fake_draft))
+    monkeypatch.setattr(draft_letter, "_check_chain", lambda: RunnableLambda(fake.fake_check))
+    monkeypatch.setattr(draft_letter, "_revise_chain", lambda: RunnableLambda(fake.fake_revise))
+
+    monkeypatch.setattr(telegram, "TELEGRAM_BOT_TOKEN", "SECRET-TOKEN")
+    monkeypatch.setattr(telegram, "TELEGRAM_CHAT_ID", "42")
+    monkeypatch.setattr(telegram.requests, "post", fake.fake_post)
+    return fake

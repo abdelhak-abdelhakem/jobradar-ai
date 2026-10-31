@@ -1,36 +1,23 @@
-from langchain_core.documents import Document
-from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
-from src.agents.state import JobRadarState
-from src.config import DEDUP_CHROMA_DIR, EMBEDDING_MODEL, DEDUP_COLLECTION_NAME
+from src.agents.state import JobRadarState, job_key
+from src.db.seen_jobs import seen_keys
 
-def dedup_node(state: JobRadarState) -> JobRadarState:
-    """
-    For each scraped job, checks if a near-duplicate already exists in Chroma.
-    Returns only the genuinely new jobs.
-    """
-    job_listings = state["job_listings"]
-    documents = []
-    
-    for item in job_listings:
-        combined_text = f"{item['title']}\n\n{item['description']}"
-        doc = Document(
-            page_content=combined_text,
-            metadata={"url": item["url"], "job_id": item["id"]}
-        )
-        documents.append(doc)
-        
-    vector_db = Chroma(
-        persist_directory=DEDUP_CHROMA_DIR,
-        embedding_function=OpenAIEmbeddings(model=EMBEDDING_MODEL),
-        collection_name=DEDUP_COLLECTION_NAME
-    )
-    
-    existing = vector_db.get()  
-    existing_ids = {meta.get("job_id") for meta in existing["metadatas"]}
 
-    new_jobs = [doc for doc in documents if doc.metadata["job_id"] not in existing_ids]
-    print(f"\n{len(new_jobs)} new jobs found, {len(documents) - len(new_jobs)} duplicates skipped (by ID).")
-    
-    state["new_jobs"] = new_jobs
-    return state
+def dedup_node(state: JobRadarState) -> dict:
+    """
+    Keeps jobs that haven't been finished in an earlier run.
+    Jobs are recorded as seen later, in notify_telegram_node, once they've been handled.
+    Failed scrapes are dropped here and never recorded, so the next run tries them again.
+    """
+    seen = seen_keys()
+    new_jobs = {}
+    failed = 0
+
+    for job in state["job_listings"]:
+        if not job["description"]:
+            failed += 1
+        elif job_key(job) not in seen:
+            new_jobs[job_key(job)] = job
+
+    duplicates = len(state["job_listings"]) - failed - len(new_jobs)
+    print(f"\n{len(new_jobs)} new jobs found, {duplicates} duplicates skipped, {failed} failed scrapes.")
+    return {"new_jobs": list(new_jobs.values())}

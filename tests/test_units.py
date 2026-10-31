@@ -1,0 +1,189 @@
+import html
+from unittest import mock
+
+import pytest
+import requests
+
+from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
+from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
+from src.scrapers import inria_offres
+from src.scrapers.inria_offres import compile_keywords, matches_any
+from src.utils import telegram
+
+ROLE = compile_keywords(ROLE_KEYWORDS)
+DOMAIN = compile_keywords(DOMAIN_KEYWORDS)
+
+
+# Keyword filter. Titles are from the run on 2026-10-31.
+
+@pytest.mark.parametrize("title", [
+    "Master Internship in AI for biological microscopy",
+    "Internship Research / World Models for Networking",
+    "Stage : Reconnaissance d’entités nommées dans la parole",
+    "Stage M/F : acceptation d'un robot de livraison autonome en environnement de bureau",
+])
+def test_internship_titles_pass_the_role_filter(title):
+    assert matches_any(ROLE, title)
+
+
+@pytest.mark.parametrize("title", [
+    "Adjoint(e)-Fondé(e) de pouvoir de l’Agent Comptable – Pôle Comptabilité, Recouvrement (H/F)",
+    "Ingénieur d’étude en biologie",
+    "Chef.fe de projet Animation & événementiel du programme IA",
+    "Post-Doctoral Research Visit F/M Learning crowd dynamics from real-world data",
+    "PhD Position F/M Trustable Machine Learning : Analysis and Verification of Soft Automata",
+    "Research Engineer F/M — Crowd data acquisition, processing and modelling",
+    "Machine Learning Engineer",
+    "Internal auditor",
+])
+def test_other_titles_fail_the_role_filter(title):
+    assert not matches_any(ROLE, title)
+
+
+@pytest.mark.parametrize("text", [
+    "Stage en IA", "An AI system", "Using LLMs in networks", "apprentissage profond", "Deep Learning",
+])
+def test_domain_terms_match(text):
+    assert matches_any(DOMAIN, text)
+
+
+@pytest.mark.parametrize("text", [
+    "J'ai travaillé sur la chimie", "J’ai un stage", "biologie marine", "email the team", "Mail us",
+])
+def test_domain_terms_do_not_match_inside_other_words(text):
+    assert not matches_any(DOMAIN, text)
+
+
+def test_inria_about_text_does_not_count_as_a_domain_match():
+    about = ("Together, we explore strategic fields such as artificial intelligence, cybersecurity, "
+             "and quantum computing. We develop practical solutions.")
+    assert not inria_offres.matches_domain(DOMAIN, "Stage en robotique", about)
+    assert inria_offres.matches_domain(DOMAIN, "Stage en robotique", f"Deep learning for robots. {about}")
+
+
+# Scraper, with HTTP faked
+
+def page(body):
+    response = mock.Mock(text=body, status_code=200)
+    response.raise_for_status = lambda: None
+    return response
+
+
+def fake_site(details):
+    links = "".join(f'<a href="/public/classic/en/offres/{i}">{title}</a>' for i, title in details["links"])
+
+    def get(url, **kwargs):
+        if url == inria_offres.INRIA_SEARCH_URL:
+            return page(links)
+        job_id = url.split("/")[-1]
+        if job_id in details["errors"]:
+            raise requests.ConnectionError("down")
+        return page(f"<main>{details['pages'][job_id]}</main>")
+    return get
+
+
+def test_scraper_applies_role_then_domain_and_keeps_failed_pages(monkeypatch):
+    site = fake_site({
+        "links": [
+            ("2026-1", "Stage : reconnaissance de la parole"),
+            ("2026-2", "Stage en biologie"),
+            ("2026-3", "PhD Position in AI"),
+            ("2026-4", "Internship in chemistry"),
+        ],
+        "pages": {
+            "2026-1": "Modèles de langage et deep learning.",
+            "2026-2": "J'ai dit: culture cellulaire.",
+        },
+        "errors": {"2026-4"},
+    })
+    monkeypatch.setattr(inria_offres.requests, "get", site)
+    monkeypatch.setattr(inria_offres.time, "sleep", lambda _: None)
+
+    jobs = {job["id"]: job for job in inria_offres.get_inria_jobs()}
+
+    assert set(jobs) == {"2026-1", "2026-4"}
+    assert jobs["2026-1"]["source"] == "inria"
+    assert jobs["2026-4"]["description"] is None
+
+
+# Telegram
+
+def test_split_keeps_every_part_under_the_limit_after_escaping():
+    text = "&<>_*[ " * 3000
+    parts = telegram.split_text(text)
+    assert len(parts) > 1
+    assert all(len(html.escape(part)) <= telegram.MAX_MESSAGE_LENGTH for part in parts)
+    assert "".join(parts).replace(" ", "") == text.replace(" ", "")
+
+
+def test_split_handles_text_with_no_spaces():
+    parts = telegram.split_text("x" * 10000)
+    assert [len(part) for part in parts] == [4096, 4096, 1808]
+
+
+def test_short_text_is_one_part_and_empty_text_is_none():
+    assert telegram.split_text("Hello") == ["Hello"]
+    assert telegram.split_text("   ") == []
+
+
+def test_special_characters_are_escaped_and_arrive_intact(world):
+    assert telegram.send_plain("a_b *c* [d] <e> & f")
+    assert world.sent == ["a_b *c* [d] &lt;e&gt; &amp; f"]
+
+
+def test_long_letter_is_sent_as_several_messages(world):
+    assert telegram.send_plain("word & " * 2000)
+    assert len(world.sent) > 1
+    assert all(len(message) <= telegram.MAX_MESSAGE_LENGTH for message in world.sent)
+
+
+def test_send_lines_never_splits_a_line(world):
+    lines = [f'<a href="https://x/{i}">job {i}</a>' for i in range(500)]
+    assert telegram.send_lines(lines)
+    assert len(world.sent) > 1
+    assert "\n".join(world.sent).split("\n") == lines
+
+
+def test_network_error_returns_false_and_hides_the_token(world, monkeypatch, capsys):
+    def boom(*args, **kwargs):
+        raise requests.ConnectionError("failed: https://api.telegram.org/botSECRET-TOKEN/sendMessage")
+    monkeypatch.setattr(telegram.requests, "post", boom)
+
+    assert telegram.send_html("hi") is False
+    assert "SECRET-TOKEN" not in capsys.readouterr().out
+
+
+def test_rate_limit_waits_and_retries_once(world, monkeypatch):
+    from conftest import FakeResponse
+    responses = [FakeResponse(429, {"parameters": {"retry_after": 7}}), FakeResponse()]
+    waits = []
+    monkeypatch.setattr(telegram.requests, "post", lambda *a, **k: responses.pop(0))
+    monkeypatch.setattr(telegram.time, "sleep", waits.append)
+
+    assert telegram.send_html("hi") is True
+    assert waits == [7]
+
+
+def test_missing_credentials_return_false(world, monkeypatch):
+    monkeypatch.setattr(telegram, "TELEGRAM_BOT_TOKEN", None)
+    assert telegram.send_html("hi") is False
+
+
+# Evaluation
+
+def test_precision_at_k():
+    rows = [{"score": 90, "label": 1}, {"score": 80, "label": 0}, {"score": 10, "label": 1}]
+    assert precision_at_k(rows, 2) == 0.5
+
+
+def test_spearman_known_values():
+    assert spearman([1, 2, 3], [10, 20, 30]) == pytest.approx(1)
+    assert spearman([1, 2, 3], [30, 20, 10]) == pytest.approx(-1)
+    assert spearman([1, 2, 3, 4], [1, 1, 2, 2]) == pytest.approx(0.8944, abs=1e-4)
+    assert spearman([1, 2], [5, 5]) is None
+
+
+def test_load_labels_skips_unlabelled_rows(tmp_path):
+    path = tmp_path / "labels.csv"
+    path.write_text("key,title,url,score,label\na,t,u,80,1\nb,t,u,40,\n", encoding="utf-8")
+    assert load_labels(str(path)) == [{"score": 80, "label": 1}]

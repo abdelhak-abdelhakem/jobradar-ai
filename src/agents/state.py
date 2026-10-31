@@ -59,7 +59,8 @@ class Job(TypedDict):
 
 class ScoredJob(TypedDict):
     job: Job
-    job_match: JobMatch
+    job_match: JobMatch     # match_score here is the final score, after the caps
+    llm_score: int          # the score the LLM gave before the caps
 
 
 class JobRadarState(TypedDict):

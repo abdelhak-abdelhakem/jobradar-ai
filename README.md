@@ -45,6 +45,7 @@ START
 | Job history | SQLite |
 | Observability | LangSmith (optional) |
 | Notifications | Telegram Bot API |
+| Dashboard | Streamlit + Altair |
 | Scraping | requests + BeautifulSoup |
 | Tests and CI | pytest + GitHub Actions |
 
@@ -64,6 +65,14 @@ python -m scheduler.run_daily
 ```
 
 The first run scores every matching job. Later runs only process new ones. A run sends a Telegram message even when nothing matches, so you can tell a quiet day from a broken pipeline. It runs once per call, so use cron or similar to run it daily.
+
+## Dashboard
+
+A read-only page showing every scored job: the LLM's score against the final score, the rationale, skills, and letter draft. It uses saved results, so it makes no API calls.
+
+```bash
+python -m streamlit run dashboard/app.py
+```
 
 ## Tests
 
@@ -102,12 +111,13 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Cover letter drafting with a claim check and revision loop
 - [x] Ranked Telegram digest
 - [x] Tests and CI
+- [x] Results dashboard
 - [ ] Label jobs and publish scoring results
 - [ ] Re-measure runtime and cost
 - [ ] Telegram approval step with a LangGraph checkpointer and `interrupt`
 - [ ] More job sources that allow automated access
 - [ ] Job normalization and dedup across sources
-- [ ] Dashboard and application tracking
+- [ ] Application tracking
 - [ ] Daily scheduled deployment
 
 ---

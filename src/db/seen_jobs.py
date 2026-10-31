@@ -1,11 +1,27 @@
-"""Records which jobs are finished, so later runs don't score or send them again."""
+"""Records finished jobs and their results, so later runs skip them and the dashboard can show them."""
+import json
 import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from src import config
+
+JSON_COLUMNS = ("matched_skills", "missing_skills", "issues")
+
+# Added after the first version of this table. Older rows have NULL in these columns.
+RESULT_COLUMNS = {
+    "company": "TEXT",
+    "llm_score": "INTEGER",
+    "domain_fit": "TEXT",
+    "is_internship": "INTEGER",
+    "rationale": "TEXT",
+    "matched_skills": "TEXT",
+    "missing_skills": "TEXT",
+    "letter": "TEXT",
+    "issues": "TEXT",
+}
 
 
 class SeenJob(TypedDict):
@@ -13,6 +29,15 @@ class SeenJob(TypedDict):
     title: str
     url: str
     score: int
+    company: NotRequired[str | None]
+    llm_score: NotRequired[int]
+    domain_fit: NotRequired[str]
+    is_internship: NotRequired[bool]
+    rationale: NotRequired[str]
+    matched_skills: NotRequired[list[str]]
+    missing_skills: NotRequired[list[str]]
+    letter: NotRequired[str | None]
+    issues: NotRequired[list[dict]]
 
 
 def _connect(path: str | None) -> sqlite3.Connection:
@@ -29,6 +54,10 @@ def _connect(path: str | None) -> sqlite3.Connection:
             seen_at TEXT NOT NULL
         )"""
     )
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(seen_jobs)")}
+    for column, column_type in RESULT_COLUMNS.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE seen_jobs ADD COLUMN {column} {column_type}")
     return conn
 
 
@@ -39,14 +68,31 @@ def seen_keys(path: str | None = None) -> set[str]:
 
 def mark_seen(jobs: list[SeenJob], path: str | None = None) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    columns = ["key", "title", "url", "score", "seen_at", *RESULT_COLUMNS]
+    placeholders = ", ".join("?" for _ in columns)
+
+    def row(job: SeenJob) -> list:
+        values = {**job, "seen_at": now}
+        for column in JSON_COLUMNS:
+            values[column] = json.dumps(job.get(column, []), ensure_ascii=False)
+        return [values.get(column) for column in columns]
+
     with closing(_connect(path)) as conn, conn:
         conn.executemany(
-            "INSERT OR REPLACE INTO seen_jobs (key, title, url, score, seen_at) VALUES (?, ?, ?, ?, ?)",
-            [(j["key"], j["title"], j["url"], j["score"], now) for j in jobs],
+            f"INSERT OR REPLACE INTO seen_jobs ({', '.join(columns)}) VALUES ({placeholders})",
+            [row(job) for job in jobs],
         )
 
 
 def all_seen(path: str | None = None) -> list[dict]:
+    """Returns every finished job, highest score first. Fields older rows lack are None or empty."""
     with closing(_connect(path)) as conn:
-        rows = conn.execute("SELECT key, title, url, score FROM seen_jobs ORDER BY score DESC")
-        return [dict(row) for row in rows]
+        rows = conn.execute("SELECT * FROM seen_jobs ORDER BY score DESC, title").fetchall()
+
+    jobs = []
+    for row in rows:
+        job = dict(row)
+        for column in JSON_COLUMNS:
+            job[column] = json.loads(job[column]) if job[column] else []
+        jobs.append(job)
+    return jobs

@@ -52,7 +52,7 @@ def spearman(xs: list[float], ys: list[float]) -> float | None:
 def export_labels(path: str) -> int:
     jobs = all_seen()
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDS)
+        writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows({**job, "label": ""} for job in jobs)
     return len(jobs)

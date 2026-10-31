@@ -5,13 +5,24 @@ from src.db.seen_jobs import SeenJob, mark_seen
 from src.utils.telegram import send_lines, send_plain
 
 
-def _seen_record(item: ScoredJob) -> SeenJob:
+def _seen_record(item: ScoredJob, state: JobRadarState) -> SeenJob:
     job = item["job"]
+    match = item["job_match"]
+    key = job_key(job)
     return {
-        "key": job_key(job),
+        "key": key,
         "title": job["title"],
         "url": job["url"],
-        "score": item["job_match"].match_score,
+        "score": match.match_score,
+        "company": job.get("company"),
+        "llm_score": item["llm_score"],
+        "domain_fit": match.domain_fit,
+        "is_internship": match.is_internship,
+        "rationale": match.rationale,
+        "matched_skills": match.matched_skills,
+        "missing_skills": match.missing_skills,
+        "letter": state["cover_letters"].get(key),
+        "issues": state["letter_issues"].get(key, []),
     }
 
 
@@ -66,13 +77,13 @@ def notify_telegram_node(state: JobRadarState) -> dict:
     )
 
     # Weak matches need no notification, so they're finished as soon as they've been scored.
-    finished = [_seen_record(s) for s in state["scored_jobs"] if job_key(s["job"]) not in strong_keys]
+    finished = [_seen_record(s, state) for s in state["scored_jobs"] if job_key(s["job"]) not in strong_keys]
 
     digest_sent = send_lines(_digest_lines(ranked, state))
     for rank, item in enumerate(ranked, 1):
         key = job_key(item["job"])
         if _send_job(rank, item, letters[key], state["letter_issues"].get(key, [])):
-            finished.append(_seen_record(item))
+            finished.append(_seen_record(item, state))
         else:
             digest_sent = False
 

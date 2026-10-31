@@ -74,7 +74,7 @@ def score_job_node(state: JobRadarState) -> dict:
     for job, result in zip(jobs, run_batch(_scoring_chain(), inputs)):
         if isinstance(result, JobMatch):
             match = _apply_score_caps(result)
-            scored.append({"job": job, "job_match": match})
+            scored.append({"job": job, "job_match": match, "llm_score": result.match_score})
             print(f"  {match.match_score:>3} (LLM {result.match_score:>3}, {match.domain_fit:<8}) {job['title'][:70]}")
         else:
             failed += 1

@@ -4,6 +4,7 @@ from unittest import mock
 import pytest
 import requests
 
+from src.agents.nodes.draft_letter import candidate_name, ensure_signature, remove_sentence
 from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
 from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
 from src.scrapers import inria_offres
@@ -104,6 +105,43 @@ def test_scraper_applies_role_then_domain_and_keeps_failed_pages(monkeypatch):
     assert set(jobs) == {"2026-1", "2026-4"}
     assert jobs["2026-1"]["source"] == "inria"
     assert jobs["2026-4"]["description"] is None
+
+
+# Removing flagged sentences
+
+@pytest.mark.parametrize("letter, quote, expected", [
+    ("One. Two. Three.", "Two.", "One. Three."),
+    ("One. Two. Three.", "Two", "One. Three."),
+    ("One.\n\nTwo.\n\nThree.", "Two.", "One.\n\nThree."),
+    ("One. Two.", "Two.", "One."),
+    ("One. Two.", "One.", "Two."),
+    ("Score 0.892 here. Next.", "Score 0.892 here.", "Next."),
+    ("One. Two.", "Missing", "One. Two."),
+])
+def test_remove_sentence(letter, quote, expected):
+    assert remove_sentence(letter, quote) == expected
+
+
+# Signature
+
+def test_candidate_name_comes_from_the_first_heading():
+    assert candidate_name("intro\n# Abdelhak ABDELHAKEM\n## Profil\n# Other") == "Abdelhak ABDELHAKEM"
+    assert candidate_name("## Profil only") is None
+
+
+@pytest.mark.parametrize("letter, expected", [
+    ("Text.\n\nSincerely,", "Text.\n\nSincerely,\nAlex Example"),
+    ("Text.\n\nSincerely,\nAlex Example", "Text.\n\nSincerely,\nAlex Example"),
+    ("Text.\n\nCordialement, ALEX EXAMPLE\n", "Text.\n\nCordialement, ALEX EXAMPLE"),
+    ("I am Alex Example, a student." + " Long text." * 20 + "\n\nSincerely,",
+     "I am Alex Example, a student." + " Long text." * 20 + "\n\nSincerely,\nAlex Example"),
+])
+def test_ensure_signature(letter, expected):
+    assert ensure_signature(letter, "Alex Example") == expected
+
+
+def test_no_known_name_leaves_the_letter_unchanged():
+    assert ensure_signature("Sincerely,", None) == "Sincerely,"
 
 
 # Telegram

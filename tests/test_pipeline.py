@@ -3,7 +3,12 @@ from conftest import make_job, make_match
 
 from src.agents.graph import compile_graph
 from src.agents.state import initial_state
-from src.config import MAX_LETTER_REVISIONS, NON_INTERNSHIP_MAX_SCORE
+from src.config import (
+    ADJACENT_DOMAIN_MAX_SCORE,
+    MAX_LETTER_REVISIONS,
+    NO_DOMAIN_FIT_MAX_SCORE,
+    NON_INTERNSHIP_MAX_SCORE,
+)
 from src.db.seen_jobs import seen_keys
 
 
@@ -106,6 +111,35 @@ def test_non_internship_cannot_reach_the_threshold(world):
     assert world.calls["draft"] == 0
 
 
+def test_no_domain_fit_cannot_reach_the_threshold(world):
+    world.scores = {"Internship": make_match(95, domain_fit="none")}
+    result = run()
+    assert result["scored_jobs"][0]["job_match"].match_score == NO_DOMAIN_FIT_MAX_SCORE
+    assert world.calls["draft"] == 0
+
+
+def test_adjacent_domain_can_qualify_but_not_reach_the_top_band(world):
+    world.scores = {"Internship": make_match(95, domain_fit="adjacent")}
+    result = run()
+    assert result["scored_jobs"][0]["job_match"].match_score == ADJACENT_DOMAIN_MAX_SCORE
+    assert world.calls["draft"] == 1
+
+
+def test_direct_domain_score_is_not_capped(world):
+    world.scores = {"Internship": make_match(95, domain_fit="direct")}
+    assert run()["scored_jobs"][0]["job_match"].match_score == 95
+
+
+def test_lower_cap_wins_when_both_apply(world):
+    world.scores = {"Internship": make_match(95, is_internship=False, domain_fit="none")}
+    assert run()["scored_jobs"][0]["job_match"].match_score == NON_INTERNSHIP_MAX_SCORE
+
+
+def test_score_below_the_cap_is_unchanged(world):
+    world.scores = {"Internship": make_match(50, domain_fit="none")}
+    assert run()["scored_jobs"][0]["job_match"].match_score == 50
+
+
 # Claim check
 
 def test_clean_letter_is_not_revised(world):
@@ -124,12 +158,54 @@ def test_unsupported_claim_is_revised_and_then_passes(world):
     assert result["letter_issues"]["inria:1"] == []
 
 
-def test_claim_that_survives_revisions_is_flagged(world):
+def test_flagged_sentence_the_rewrite_keeps_is_deleted(world):
+    false_claim = "I have worked with audio data."
+    world.letter = f"Dear team,\n\nI like NLP. {false_claim} I use Python.\n\nAbdelhak"
+    world.revised_letter = world.letter  # the rewrite ignores the problem
+    world.unsupported = {false_claim: [false_claim]}
+
+    result = run()
+
+    final = result["cover_letters"]["inria:1"]
+    assert false_claim not in final
+    assert "I like NLP. I use Python." in final
+    assert false_claim not in "".join(world.sent)
+    assert "Unverified" not in all_text(world)
+
+
+def test_last_round_deletes_without_calling_the_llm(world):
+    first = "I have worked with audio data."
+    second = "I am an expert in C++."
+    world.letter = f"Dear team,\n\n{first}\n\nI use Python.\n\nAbdelhak"
+    world.revised_letter = f"Dear team,\n\n{second}\n\nI use Python.\n\nAbdelhak"
+    world.unsupported = {first: [first], second: [second]}
+
+    result = run()
+
+    assert world.calls["revise"] == MAX_LETTER_REVISIONS - 1
+    assert second not in result["cover_letters"]["inria:1"]
+    assert "I use Python." in result["cover_letters"]["inria:1"]
+
+
+def test_claim_that_cannot_be_located_is_flagged(world):
     world.unsupported = {"letter": ["Audio data experience"]}
     run()
-    assert world.calls["revise"] == MAX_LETTER_REVISIONS
     assert "Unverified" in all_text(world)
     assert "Audio data experience" in all_text(world)
+
+
+def test_generic_letter_is_revised_and_then_passes(world):
+    world.off_topic_text = "truthful"
+    run()
+    assert world.calls["revise"] == 1
+    assert world.revised_letter in world.sent
+    assert "Unverified" not in all_text(world)
+
+
+def test_letter_that_stays_generic_is_flagged(world):
+    world.off_topic_text = "letter"
+    run()
+    assert "connect the candidate" in all_text(world)
 
 
 def test_only_failing_letters_are_rechecked(world):
@@ -148,6 +224,20 @@ def test_placeholder_signature_is_caught_without_the_llm(world):
         world.sent.clear()
         run()
         assert "placeholder" in all_text(world), placeholder
+
+
+def test_missing_signature_is_added(world):
+    world.letter = "Dear team,\n\nA truthful letter.\n\nSincerely,"
+    run()
+    assert "Sincerely,\nAbdelhak" in all_text(world)
+
+
+def test_signature_survives_deleting_the_last_sentence(world):
+    false_claim = "I have worked with audio data."
+    world.letter = f"Dear team,\n\nI use Python.\n\n{false_claim}\n\nAbdelhak"
+    world.revised_letter = world.letter
+    world.unsupported = {false_claim: [false_claim]}
+    assert run()["cover_letters"]["inria:1"].endswith("Abdelhak")
 
 
 def test_real_name_is_not_a_placeholder(world):

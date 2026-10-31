@@ -2,7 +2,7 @@ import pytest
 from langchain_core.runnables import RunnableLambda
 
 from src.agents.nodes import draft_letter, score
-from src.agents.state import JobMatch, LetterCheck
+from src.agents.state import JobMatch, LetterCheck, UnsupportedClaim
 from src.utils import telegram
 
 
@@ -17,12 +17,13 @@ def make_job(job_id="1", title="Internship in NLP", description="An AI internshi
     }
 
 
-def make_match(score_value=80, is_internship=True) -> JobMatch:
+def make_match(score_value=80, is_internship=True, domain_fit="direct") -> JobMatch:
     return JobMatch(
         rationale="Good overlap.",
         matched_skills=["Python"],
         missing_skills=[],
         is_internship=is_internship,
+        domain_fit=domain_fit,
         match_score=score_value,
     )
 
@@ -46,7 +47,8 @@ class FakeWorld:
         self.scores = {}            # text in the job -> score, or an Exception to raise
         self.calls = {"score": 0, "draft": 0, "check": 0, "revise": 0}
         self.letter = "Dear team,\n\nA truthful letter.\n\nAbdelhak"
-        self.unsupported = {}       # text in the letter -> claims
+        self.unsupported = {}       # text in the letter -> quotes to flag
+        self.off_topic_text = None  # letters containing this text are reported as off topic
         self.revised_letter = "Dear team,\n\nA revised letter.\n\nAbdelhak"
         self.draft_error = False
         self.sent = []
@@ -72,10 +74,11 @@ class FakeWorld:
     def fake_check(self, inputs):
         self.calls["check"] += 1
         claims = []
-        for text, found in self.unsupported.items():
+        for text, quotes in self.unsupported.items():
             if text in inputs["letter"]:
-                claims.extend(found)
-        return LetterCheck(unsupported_claims=claims)
+                claims.extend(UnsupportedClaim(quote=q, reason="Not in the profile.") for q in quotes)
+        off_topic = self.off_topic_text is not None and self.off_topic_text in inputs["letter"]
+        return LetterCheck(unsupported_claims=claims, discusses_job_topic=not off_topic)
 
     def fake_revise(self, inputs):
         self.calls["revise"] += 1

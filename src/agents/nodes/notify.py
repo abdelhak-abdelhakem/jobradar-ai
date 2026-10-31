@@ -1,6 +1,6 @@
 from html import escape
 
-from src.agents.state import JobRadarState, ScoredJob, job_key, strong_matches
+from src.agents.state import JobRadarState, LetterIssue, ScoredJob, job_key, strong_matches
 from src.db.seen_jobs import SeenJob, mark_seen
 from src.utils.telegram import send_lines, send_plain
 
@@ -35,12 +35,14 @@ def _digest_lines(ranked: list[ScoredJob], state: JobRadarState) -> list[str]:
     return lines
 
 
-def _send_job(rank: int, item: ScoredJob, letter: str, issues: list[str]) -> bool:
+def _send_job(rank: int, item: ScoredJob, letter: str, issues: list[LetterIssue]) -> bool:
     match = item["job_match"]
     lines = [f'<b>#{rank} {_link(item)}</b>', f"<b>Score:</b> {match.match_score}/100", escape(match.rationale)]
     if issues:
-        lines.append("⚠️ <b>Unverified letter. Check these claims before using it:</b>")
-        lines.extend(f"• {escape(issue)}" for issue in issues)
+        lines.append("⚠️ <b>Unverified letter. Check these points before using it:</b>")
+        for issue in issues:
+            quote = f'"{escape(issue["quote"])}": ' if issue["quote"] else ""
+            lines.append(f'• {quote}{escape(issue["reason"])}')
     # Both messages are always attempted, so one failure doesn't hide the other part.
     header_sent = send_lines(lines)
     letter_sent = send_plain(letter)

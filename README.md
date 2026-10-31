@@ -31,7 +31,8 @@ START
 
 - **Whole CV instead of RAG:** the first version retrieved up to 6 chunks of 300 characters, under a third of a 6 KB CV. Letters came back signed "Nom du candidat" and scores were based on fragments, so the LLM now gets the whole CV.
 - **Jobs are recorded only once they're handled:** failed scrapes, scores, letters, and Telegram sends are all retried on the next run.
-- **The internship requirement is enforced in code:** non-internships are capped at a score of 40, whatever the LLM returns.
+- **Key requirements are enforced in code:** whatever score the LLM returns, non-internships are capped at 40, jobs with no link to the candidate's experience at 60, and jobs in a new domain that use familiar methods at 79.
+- **Flagged sentences get deleted:** if a rewrite keeps a sentence the checker flagged, code removes it. The last revision round only deletes, so it can't add new claims.
 - **Failures stay contained:** one failed LLM call doesn't stop the batch.
 
 ### Stack

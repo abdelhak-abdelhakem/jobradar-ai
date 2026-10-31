@@ -16,6 +16,8 @@ SEEN_JOBS_DB = os.path.join(BASE_DIR, "data", "seen_jobs.sqlite3")
 # Scoring
 MATCH_SCORE_THRESHOLD = 70      # at or above this, a job gets a letter and a notification
 NON_INTERNSHIP_MAX_SCORE = 40   # jobs that aren't internships can never reach the threshold
+NO_DOMAIN_FIT_MAX_SCORE = 60    # neither can jobs with no link to the candidate's experience
+ADJACENT_DOMAIN_MAX_SCORE = 79  # related experience can qualify, but can't reach the top band
 
 # Letters
 MAX_LETTER_REVISIONS = 2        # claim-check rounds before a letter is sent marked as unverified

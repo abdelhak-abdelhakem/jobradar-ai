@@ -1,4 +1,4 @@
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -11,6 +11,9 @@ class JobMatch(BaseModel):
     matched_skills: list[str]
     missing_skills: list[str]
     is_internship: bool = Field(..., description="true only if the posting is an internship (stage)")
+    domain_fit: Literal["direct", "adjacent", "none"] = Field(
+        ..., description="how the candidate's experience relates to the posting's main domain"
+    )
     match_score: int = Field(..., description="the match score, from 0 to 100")
 
     @field_validator("match_score")
@@ -26,10 +29,23 @@ class JobMatch(BaseModel):
         return [s for s in v if s.strip() != ""]
 
 
+class UnsupportedClaim(BaseModel):
+    quote: str = Field(..., description="the complete sentence, copied exactly from the letter")
+    reason: str = Field(..., description="why the profile doesn't support it")
+
+
 class LetterCheck(BaseModel):
-    unsupported_claims: list[str] = Field(
-        ..., description="claims about the candidate that the profile doesn't support; empty if none"
+    unsupported_claims: list[UnsupportedClaim] = Field(
+        ..., description="facts about the candidate that the profile doesn't support; empty if none"
     )
+    discusses_job_topic: bool = Field(
+        ..., description="true only if the letter connects the candidate to this job's specific topic"
+    )
+
+
+class LetterIssue(TypedDict):
+    quote: str | None   # the flagged text, or None if the issue is about the letter as a whole
+    reason: str
 
 
 class Job(TypedDict):
@@ -53,7 +69,7 @@ class JobRadarState(TypedDict):
     scored_jobs: list[ScoredJob]        # written by score_job_node
     failed_scores: int                  # written by score_job_node
     cover_letters: dict[str, str]       # job key -> letter; written by draft and revise nodes
-    letter_issues: dict[str, list[str]] # job key -> unsupported claims; written by verify node
+    letter_issues: dict[str, list[LetterIssue]]  # job key -> problems; written by verify node
     revision_round: int                 # written by revise_letter_node
     digest_sent: bool                   # written by notify_telegram_node
 

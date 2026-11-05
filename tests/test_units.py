@@ -8,7 +8,7 @@ from src.agents.nodes.draft_letter import candidate_name, ensure_signature, remo
 from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
 from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
 from src.agents.nodes import scrape
-from src.scrapers import cnrs_offres, inria_offres
+from src.scrapers import cea_offres, cnrs_offres, inria_offres
 from src.scrapers.inria_offres import compile_keywords, matches_any
 from src.utils import telegram
 
@@ -150,12 +150,66 @@ def test_cnrs_scraper_searches_internships_and_filters_on_domain(monkeypatch):
     assert jobs["UMR4-DDD-004"]["description"] is None
 
 
+def cea_offer_url(offer_id):
+    return f"{cea_offres.CEA_BASE_URL}/offre-de-emploi/emploi-stage_{offer_id}.aspx"
+
+
+def cea_offer_page(lab, position):
+    return ('<div id="contenu-ficheoffre"><h2>General information</h2>'
+            '<div id="x_divEntityDesc"><h3>Organisation</h3>The CEA does artificial intelligence.</div>'
+            f'<h3>Description de l\'unité</h3>{lab}'
+            f'<h2>Position description</h2>{position}</div>')
+
+
+def test_cea_scraper_pages_through_results_and_filters_on_position_text(monkeypatch):
+    result_pages = {
+        1: [("1001", "Stage LLM pour la simulation"), ("1002", "Stage en robotique"),
+            ("1003", "Stage capteurs")],
+        2: [("1004", "Stage logiciel"), ("1005", "Stage fermé")],
+        3: [("1001", "Stage LLM pour la simulation")],   # nothing new, so paging stops
+    }
+    pages = {
+        "1001": cea_offer_page("Laboratoire capteurs.", "Assistant en Python."),
+        "1002": cea_offer_page("Laboratoire robotique.", "Planification par deep learning."),
+        # The lab works on AI, but this internship doesn't.
+        "1003": cea_offer_page("Experts en intelligence artificielle.", "Conception électronique."),
+    }
+    requested_pages = []
+
+    def get(url, params=None, **kwargs):
+        if url == cea_offres.CEA_SEARCH_URL:
+            requested_pages.append(params["page"])
+            assert params["facet_Contract"] == cea_offres.CEA_INTERNSHIP_CONTRACT
+            cards = "".join(f'<a class="ts-offer-card__title-link" href="{cea_offer_url(i)}">{t}</a>'
+                            for i, t in result_pages.get(params["page"], []))
+            return page(cards)
+        offer_id = url.split("_")[-1].removesuffix(".aspx")
+        if offer_id == "1004":
+            raise requests.ConnectionError("down")
+        response = page(f"<html>{pages.get(offer_id, '')}</html>")
+        # A closed offer redirects to the homepage.
+        response.url = url if offer_id in pages else f"{cea_offres.CEA_BASE_URL}/accueil.aspx"
+        return response
+
+    monkeypatch.setattr(cea_offres.requests, "get", get)
+    monkeypatch.setattr(cea_offres.time, "sleep", lambda _: None)
+
+    jobs = {job["id"]: job for job in cea_offres.get_cea_jobs()}
+
+    assert requested_pages == [1, 2, 3]
+    assert set(jobs) == {"1001", "1002", "1004"}
+    assert jobs["1001"]["source"] == "cea"
+    assert "The CEA does artificial intelligence" not in jobs["1001"]["description"]
+    assert jobs["1004"]["description"] is None
+
+
 def test_one_failing_scraper_does_not_stop_the_others(monkeypatch):
     def broken():
         raise RuntimeError("site changed")
 
     monkeypatch.setattr(scrape, "get_inria_jobs", broken)
     monkeypatch.setattr(scrape, "get_cnrs_jobs", lambda: [{"source": "cnrs", "id": "X"}])
+    monkeypatch.setattr(scrape, "get_cea_jobs", lambda: [])
 
     assert scrape.scrape_node({})["job_listings"] == [{"source": "cnrs", "id": "X"}]
 

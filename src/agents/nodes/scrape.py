@@ -1,4 +1,5 @@
 from src.agents.state import JobRadarState
+from src.scrapers.cea_offres import get_cea_jobs
 from src.scrapers.cnrs_offres import get_cnrs_jobs
 from src.scrapers.inria_offres import get_inria_jobs
 
@@ -9,6 +10,7 @@ def scrape_node(state: JobRadarState) -> dict:
     scrapers = [
         ("inria", get_inria_jobs),
         ("cnrs", get_cnrs_jobs),
+        ("cea", get_cea_jobs),
     ]
 
     job_listings = []

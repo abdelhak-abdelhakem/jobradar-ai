@@ -28,6 +28,11 @@ INRIA_SEARCH_URL = f"{INRIA_BASE_URL}/public/classic/en/offres"
 CNRS_BASE_URL = "https://emploi.cnrs.fr"
 CNRS_SEARCH_URL = f"{CNRS_BASE_URL}/Offres/Recherche.aspx"
 CNRS_INTERNSHIP_CONTRACT = "STAG"   # the search form's "Convention de stage" filter
+CEA_BASE_URL = "https://www.emploi.cea.fr"
+CEA_SEARCH_URL = f"{CEA_BASE_URL}/offre-de-emploi/liste-offres.aspx"
+CEA_INTERNSHIP_CONTRACT = 579   # the "Stage" contract filter
+CEA_PROFILES = [1898, 1909]     # "Mathématiques, information scientifique, logiciel" and "Systèmes d'information"
+CEA_MAX_PAGES = 15              # 20 offers per page; a safety stop in case pagination never ends
 SCRAPER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }

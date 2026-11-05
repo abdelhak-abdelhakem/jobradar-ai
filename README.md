@@ -1,10 +1,10 @@
 # JobRadar AI 🎯
 
-An LLM pipeline built with LangGraph that finds AI internships on the Inria job board, scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
+An LLM pipeline built with LangGraph that finds AI internships on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
 
 Most of the flow is fixed. The agent-style part is the letter loop, where an LLM check decides whether each letter goes back for revision.
 
-> **Status:** Working prototype with one job source. Letters are drafts for me to review, and nothing is sent to employers.
+> **Status:** Working prototype with three job sources. Letters are drafts for me to review, and nothing is sent to employers.
 
 ---
 
@@ -12,7 +12,7 @@ Most of the flow is fixed. The agent-style part is the letter loop, where an LLM
 
 ```
 START
-  → scrape_node            # finds internships on the Inria board and fetches full pages
+  → scrape_node            # finds internships on the Inria, CNRS, and CEA boards and fetches full pages
   → dedup_node             # drops jobs already finished in an earlier run (SQLite)
   → load_profile_node      # loads the whole CV
   → score_job_node         # LLM scores each job → JobMatch (rationale, skills, score)
@@ -33,7 +33,8 @@ START
 - **Jobs are recorded only once they're handled:** failed scrapes, scores, letters, and Telegram sends are all retried on the next run.
 - **Key requirements are enforced in code:** whatever score the LLM returns, non-internships are capped at 40, jobs with no link to the candidate's experience at 60, and jobs in a new domain that use familiar methods at 79.
 - **Flagged sentences get deleted:** if a rewrite keeps a sentence the checker flagged, code removes it. The last revision round only deletes, so it can't add new claims.
-- **Failures stay contained:** one failed LLM call doesn't stop the batch.
+- **Failures stay contained:** one failed LLM call doesn't stop the batch, and one broken job board doesn't stop the others.
+- **Boilerplate is ignored when filtering:** each board repeats the same "about us" text on every offer, and Inria's mentions AI, so the keyword filter skips it. On CEA the filter also skips the lab description, which often mentions AI even when the internship doesn't.
 
 ### Stack
 
@@ -76,7 +77,7 @@ python -m streamlit run dashboard/app.py
 
 ## Tests
 
-The tests run the real graph with the LLM, Telegram, and the job board faked, so they need no API keys and cost nothing.
+The tests run the real graph with the LLM, Telegram, and the job boards faked, so they need no API keys and cost nothing.
 
 ```bash
 pip install -r requirements-dev.txt
@@ -97,7 +98,21 @@ This reports precision@k and rank correlation. No results yet, because the jobs 
 
 ---
 
-## Earlier results
+## Results
+
+### Latest run (November 5, 2026)
+
+| Step | Inria | CNRS | CEA | Total |
+|---|---|---|---|---|
+| Internships listed | 15 | 10 | 95 | 120 |
+| Passed the keyword filter | 9 | 3 | 46 | 58 |
+| New since earlier runs | 1 | 3 | 46 | 50 |
+
+Of the 50 new jobs, 23 scored 70 or more and got a letter. 21 letters passed the claim check, and 2 were sent marked as unverified after 2 revisions. The run took 17 minutes 27 seconds and cost $0.21 in OpenAI usage.
+
+Known issue: a few internships where AI is only a tool for another science, such as biology image analysis or particle physics, were rated an "adjacent" fit and scored 72 to 75. Raising the threshold wouldn't fix this, because they score close to relevant jobs. The fix belongs in the scoring prompt.
+
+### First prototype
 
 The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, drafted 11 letters, and used 897,700 tokens for $0.23 in 70 minutes. That version had no batching, keyword filter, or letter check, so these numbers don't describe the current pipeline.
 
@@ -113,8 +128,10 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Tests and CI
 - [x] Results dashboard
 - [ ] Label jobs and publish scoring results
-- [ ] Re-measure runtime and cost
+- [x] Re-measure runtime and cost
 - [ ] Telegram approval step with a LangGraph checkpointer and `interrupt`
+- [x] CNRS and CEA scrapers
+- [ ] Stricter "adjacent" domain fit in scoring
 - [ ] More job sources that allow automated access
 - [ ] Job normalization and dedup across sources
 - [ ] Application tracking

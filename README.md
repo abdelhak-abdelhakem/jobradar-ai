@@ -69,7 +69,9 @@ The first run scores every matching job. Later runs only process new ones. A run
 
 ## Dashboard
 
-A read-only page showing every scored job: the LLM's score against the final score, the rationale, skills, and letter draft. It uses saved results, so it makes no API calls.
+A page showing every scored job: its source, the LLM's score against the final score, the rationale, skills, and letter draft. It uses saved results, so it makes no API calls.
+
+The sidebar chooses which job boards the next run scrapes. The choice is saved in `data/settings.json`, and if that file is missing, every board is used.
 
 ```bash
 python -m streamlit run dashboard/app.py
@@ -127,6 +129,7 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Ranked Telegram digest
 - [x] Tests and CI
 - [x] Results dashboard
+- [x] Choose the job sources in the dashboard
 - [ ] Label jobs and publish scoring results
 - [x] Re-measure runtime and cost
 - [ ] Telegram approval step with a LangGraph checkpointer and `interrupt`

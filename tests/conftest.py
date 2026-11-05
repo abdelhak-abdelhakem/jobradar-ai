@@ -101,6 +101,7 @@ def world(monkeypatch, tmp_path):
     monkeypatch.setattr(score, "PROFILE_PATH", str(profile))
 
     monkeypatch.setattr("src.agents.nodes.scrape.get_inria_jobs", lambda: fake.jobs)
+    monkeypatch.setattr("src.agents.nodes.scrape.get_cnrs_jobs", lambda: [])
     monkeypatch.setattr(score, "_scoring_chain", lambda: RunnableLambda(fake.fake_score))
     monkeypatch.setattr(draft_letter, "_draft_chain", lambda: RunnableLambda(fake.fake_draft))
     monkeypatch.setattr(draft_letter, "_check_chain", lambda: RunnableLambda(fake.fake_check))

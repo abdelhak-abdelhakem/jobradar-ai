@@ -7,7 +7,8 @@ import requests
 from src.agents.nodes.draft_letter import candidate_name, ensure_signature, remove_sentence
 from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
 from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
-from src.scrapers import inria_offres
+from src.agents.nodes import scrape
+from src.scrapers import cnrs_offres, inria_offres
 from src.scrapers.inria_offres import compile_keywords, matches_any
 from src.utils import telegram
 
@@ -105,6 +106,58 @@ def test_scraper_applies_role_then_domain_and_keeps_failed_pages(monkeypatch):
     assert set(jobs) == {"2026-1", "2026-4"}
     assert jobs["2026-1"]["source"] == "inria"
     assert jobs["2026-4"]["description"] is None
+
+
+def cnrs_card(ref, title, lab):
+    return (f'<div class="card-body"><h3 class="h5"><a href="/Offres/PASS/{ref}/Default.aspx">{title}</a></h3>'
+            f'<div class="meta"><p><strong>{lab}</strong></p></div></div>')
+
+
+def test_cnrs_scraper_searches_internships_and_filters_on_domain(monkeypatch):
+    search_page = (cnrs_card("UMR1-AAA-001", "Stage M2 : vision par ordinateur", "LIRIS")
+                   + cnrs_card("UMR2-BBB-002", "Stage M2 en écologie", "CEFE")
+                   + cnrs_card("UMR3-CCC-003", "Stage M2 en chimie", "ICMR")
+                   + cnrs_card("UMR4-DDD-004", "Stage communication", "INSHS"))
+    about = "À propos du CNRS\n\nLe CNRS fait de l'intelligence artificielle et de tout le reste."
+    pages = {
+        "UMR1-AAA-001": "Segmentation d'images.",
+        "UMR2-BBB-002": "Modèles de deep learning pour suivre les oiseaux.",
+        "UMR3-CCC-003": f"Synthèse organique. {about}",
+    }
+    posted = {}
+
+    def post(url, data=None, **kwargs):
+        posted.update(data)
+        return page(search_page)
+
+    def get(url, **kwargs):
+        ref = url.split("/")[-2]
+        if ref not in pages:
+            raise requests.ConnectionError("down")
+        return page(f'<article><div class="post-body">{pages[ref]}</div></article>')
+
+    monkeypatch.setattr(cnrs_offres.requests, "post", post)
+    monkeypatch.setattr(cnrs_offres.requests, "get", get)
+    monkeypatch.setattr(cnrs_offres.time, "sleep", lambda _: None)
+
+    jobs = {job["id"]: job for job in cnrs_offres.get_cnrs_jobs()}
+
+    assert posted["ContractType"] == "STAG"
+    # Title match, description match, failed page kept; the CNRS about text alone doesn't count.
+    assert set(jobs) == {"UMR1-AAA-001", "UMR2-BBB-002", "UMR4-DDD-004"}
+    assert jobs["UMR1-AAA-001"]["source"] == "cnrs"
+    assert jobs["UMR1-AAA-001"]["company"] == "CNRS - LIRIS"
+    assert jobs["UMR4-DDD-004"]["description"] is None
+
+
+def test_one_failing_scraper_does_not_stop_the_others(monkeypatch):
+    def broken():
+        raise RuntimeError("site changed")
+
+    monkeypatch.setattr(scrape, "get_inria_jobs", broken)
+    monkeypatch.setattr(scrape, "get_cnrs_jobs", lambda: [{"source": "cnrs", "id": "X"}])
+
+    assert scrape.scrape_node({})["job_listings"] == [{"source": "cnrs", "id": "X"}]
 
 
 # Removing flagged sentences

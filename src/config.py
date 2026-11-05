@@ -25,6 +25,9 @@ MAX_LETTER_REVISIONS = 2        # claim-check rounds before a letter is sent mar
 # Scraper
 INRIA_BASE_URL = "https://jobs.inria.fr"
 INRIA_SEARCH_URL = f"{INRIA_BASE_URL}/public/classic/en/offres"
+CNRS_BASE_URL = "https://emploi.cnrs.fr"
+CNRS_SEARCH_URL = f"{CNRS_BASE_URL}/Offres/Recherche.aspx"
+CNRS_INTERNSHIP_CONTRACT = "STAG"   # the search form's "Convention de stage" filter
 SCRAPER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }

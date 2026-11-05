@@ -58,14 +58,6 @@ DOMAIN_KEYWORDS = [
     "langchain", "langgraph", "hugging face", "transformer", "transformers",
     "world model", "world models",
 ]
-# Combined list for scrapers that only filter on titles (welcome_to_jungle.py).
-SEARCH_KEYWORDS = ROLE_KEYWORDS + DOMAIN_KEYWORDS
-
-# The main page we navigate to trigger the API call
-APEC_SEARCH_URL = "https://www.apec.fr/candidat/recherche-stage.html/stage?motsCles=Intelligence+Artificielle"
-
-# The exact backend endpoint you identified
-APEC_API_ENDPOINT = "https://www.apec.fr/cms/webservices/rechercheOffre"
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

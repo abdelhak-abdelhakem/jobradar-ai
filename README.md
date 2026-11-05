@@ -1,8 +1,8 @@
 # JobRadar AI 🎯
 
-An LLM pipeline built with LangGraph that finds AI internships on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
+An AI agent built with LangGraph that finds AI internships on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
 
-Most of the flow is fixed. The agent-style part is the letter loop, where an LLM check decides whether each letter goes back for revision.
+Most steps run in a fixed order on purpose, so the agent stays predictable, cheap, and testable. The agentic part is the letter loop: the agent checks its own letter against the CV, and that check decides whether the letter goes back for revision, up to 2 times.
 
 > **Status:** Working prototype with three job sources. Letters are drafts for me to review, and nothing is sent to employers.
 

@@ -1,4 +1,5 @@
 import html
+import os
 from unittest import mock
 
 import pytest
@@ -9,6 +10,7 @@ from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
 from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
 from src.agents.nodes import scrape
 from src.scrapers import cea_offres, cnrs_offres, inria_offres
+from src.settings import load_settings, save_settings
 from src.scrapers.inria_offres import compile_keywords, matches_any
 from src.utils import telegram
 
@@ -212,6 +214,41 @@ def test_one_failing_scraper_does_not_stop_the_others(monkeypatch):
     monkeypatch.setattr(scrape, "get_cea_jobs", lambda: [])
 
     assert scrape.scrape_node({})["job_listings"] == [{"source": "cnrs", "id": "X"}]
+
+
+def test_scrape_node_runs_only_the_selected_sources(monkeypatch):
+    calls = []
+    for name in ("inria", "cnrs", "cea"):
+        monkeypatch.setattr(scrape, f"get_{name}_jobs", lambda name=name: calls.append(name) or [])
+
+    save_settings(["cea", "inria"])
+    scrape.scrape_node({})
+
+    assert calls == ["inria", "cea"]
+
+
+# Settings
+
+def test_settings_default_to_every_source_when_the_file_is_missing():
+    assert load_settings()["sources"] == ["inria", "cnrs", "cea"]
+
+
+@pytest.mark.parametrize("content", ["{not json", "[]", '{"sources": []}', '{"sources": ["monster"]}'])
+def test_broken_settings_fall_back_to_every_source(settings_file, content):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        f.write(content)
+    assert load_settings()["sources"] == ["inria", "cnrs", "cea"]
+
+
+def test_saved_settings_keep_known_sources_in_order():
+    save_settings(["cea", "monster", "cnrs", "cea"])
+    assert load_settings()["sources"] == ["cnrs", "cea"]
+
+
+def test_settings_need_at_least_one_source(settings_file):
+    with pytest.raises(ValueError):
+        save_settings([])
+    assert not os.path.exists(settings_file)
 
 
 # Removing flagged sentences

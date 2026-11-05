@@ -8,6 +8,7 @@ from src.agents.graph import compile_graph
 from src.agents.state import initial_state
 from src.db.seen_jobs import all_seen, mark_seen
 from src.evaluation.evaluate_scoring import export_labels
+from src.settings import load_settings
 
 from conftest import make_job, make_match
 
@@ -130,3 +131,35 @@ def test_results_dont_affect_dedup_or_evaluation_export(db, tmp_path):
     path = tmp_path / "labels.csv"
     assert export_labels(str(path)) == 1
     assert path.read_text(encoding="utf-8").splitlines()[0] == "key,title,url,score,label"
+
+
+# Source settings in the sidebar
+
+def test_sidebar_saves_the_chosen_sources(db):
+    app = run_app()
+    boxes = {box.label: box for box in app.sidebar.checkbox}
+    assert all(box.value for box in boxes.values())   # all sources are on by default
+
+    boxes["CNRS"].uncheck()
+    app.sidebar.button[0].click().run()
+
+    assert not app.exception
+    assert "Saved" in app.sidebar.success[0].value
+    assert load_settings()["sources"] == ["inria", "cea"]
+    assert [box.value for box in run_app().sidebar.checkbox] == [True, False, True]
+
+
+def test_sidebar_refuses_to_save_no_source(db, settings_file):
+    app = run_app()
+    for box in app.sidebar.checkbox:
+        box.uncheck()
+    app.sidebar.button[0].click().run()
+
+    assert "at least one" in app.sidebar.error[0].value
+    assert not os.path.exists(settings_file)
+
+
+def test_jobs_table_shows_the_source(db):
+    mark_seen([job("cea:42", "A CEA job", 78), job("inria:1", "An Inria job", 60, letter=None)])
+    app = run_app()
+    assert set(app.dataframe[0].value["Source"]) == {"CEA", "Inria"}

@@ -1,5 +1,6 @@
 """
-Read-only view of the pipeline's saved results. It makes no LLM or Telegram calls.
+View of the pipeline's saved results, with a sidebar to choose the job sources for the next run.
+It makes no LLM or Telegram calls.
 
   python -m streamlit run dashboard/app.py
 """
@@ -14,6 +15,7 @@ import streamlit as st
 
 from src.config import MATCH_SCORE_THRESHOLD
 from src.db.seen_jobs import all_seen
+from src.settings import SOURCES, load_settings, save_settings
 
 # Passes colour-blindness and contrast checks on both Streamlit's light and dark backgrounds.
 FINAL_COLOR = "#2a78d6"
@@ -79,9 +81,34 @@ def score_chart(jobs: list[dict]) -> alt.LayerChart:
     return (connectors + cutoff + points).properties(height=34 * len(jobs) + 70)
 
 
+def source_label(job: dict) -> str:
+    name = job["key"].split(":", 1)[0]
+    return SOURCES.get(name, name)
+
+
+def source_settings() -> None:
+    """Sidebar form that chooses which job boards the next run scrapes."""
+    st.sidebar.header("Settings")
+    current = load_settings()["sources"]
+
+    with st.sidebar.form("sources"):
+        st.markdown("**Job sources**")
+        chosen = [name for name, label in SOURCES.items() if st.checkbox(label, value=name in current)]
+        saved = st.form_submit_button("Save")
+
+    if saved:
+        try:
+            save_settings(chosen)
+        except ValueError as e:
+            st.sidebar.error(str(e))
+        else:
+            st.sidebar.success("Saved. The next run uses these sources.")
+
+
 def results_table(jobs: list[dict]) -> pd.DataFrame:
     return pd.DataFrame([
         {
+            "Source": source_label(job),
             "Final score": job["score"],
             "LLM score": llm_score(job),
             "Domain fit": DOMAIN_LABELS[job["domain_fit"]],
@@ -131,6 +158,7 @@ def show_job(job: dict) -> None:
 def main() -> None:
     st.set_page_config(page_title="JobRadar", layout="wide")
     st.title("JobRadar")
+    source_settings()
 
     jobs = all_seen()
     if not jobs:

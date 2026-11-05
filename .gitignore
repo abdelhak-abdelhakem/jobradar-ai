@@ -15,6 +15,7 @@ data/profile/*
 !data/profile/example_profile.md
 data/*.sqlite3
 data/*.csv
+data/settings.json
 
 # IDEs & OS Files
 .vscode/

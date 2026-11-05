@@ -91,6 +91,14 @@ class FakeWorld:
         return FakeResponse()
 
 
+@pytest.fixture(autouse=True)
+def settings_file(monkeypatch, tmp_path):
+    """Every test gets its own settings file, so the real data/settings.json never affects tests."""
+    path = str(tmp_path / "settings.json")
+    monkeypatch.setattr("src.config.SETTINGS_PATH", path)
+    return path
+
+
 @pytest.fixture
 def world(monkeypatch, tmp_path):
     fake = FakeWorld()

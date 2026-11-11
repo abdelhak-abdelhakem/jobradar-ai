@@ -1,6 +1,6 @@
 # JobRadar AI 🎯
 
-An AI agent built with LangGraph that finds AI internships or PhD positions on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
+An AI agent built with LangGraph that finds AI internships or PhD positions on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram, Gmail, or both.
 
 Most steps run in a fixed order on purpose, so the agent stays predictable, cheap, and testable. The agentic part is the letter loop: the agent checks its own letter against the CV, and that check decides whether the letter goes back for revision, up to 2 times.
 
@@ -17,13 +17,13 @@ START
   → load_profile_node      # loads the whole CV
   → score_job_node         # LLM scores each job → JobMatch (rationale, skills, score)
   → [any score ≥ 70?]
-        no  → notify_telegram_node
+        no  → notify_node
         yes → draft_letter_node
                 → verify_letter_node   # checks each letter's claims against the CV
                 → [unsupported claims and revisions left?]
                       yes → revise_letter_node → back to verify_letter_node
-                      no  → notify_telegram_node
-  → notify_telegram_node   # sends the ranked digest and letters, then records finished jobs
+                      no  → notify_node
+  → notify_node            # sends the digest and letters on each channel, then records finished jobs
   → END
 ```
 
@@ -46,7 +46,7 @@ START
 | Structured output | Pydantic + `with_structured_output()` |
 | Job history | SQLite |
 | Observability | LangSmith (optional) |
-| Notifications | Telegram Bot API |
+| Notifications | Telegram Bot API, Gmail over SMTP |
 | Dashboard | Streamlit + Altair |
 | Scraping | requests + BeautifulSoup |
 | Tests and CI | pytest + GitHub Actions |
@@ -60,11 +60,13 @@ git clone https://github.com/abdelhak-abdelhakem/jobradar-ai.git
 cd jobradar-ai
 pip install -r requirements.txt
 
-cp .env.example .env                                       # then fill in your keys
+cp .env.example .env                                       # then fill in your keys (Gmail is optional)
 cp data/profile/example_profile.md data/profile/my_profile.md   # then replace with your CV
 
 python -m scheduler.run_daily
 ```
+
+To get the digest by email, create a Gmail [App Password](https://myaccount.google.com/apppasswords) (it needs 2-Step Verification), put the address and the password in `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` in `.env`, and choose Gmail in the dashboard. A separate Gmail account for JobRadar keeps your own account out of it.
 
 The first run scores every matching job. Later runs only process new ones. A run sends a Telegram message even when nothing matches, so you can tell a quiet day from a broken pipeline. Each call runs the pipeline once; to run it automatically, see [Schedule](#schedule). Two runs never overlap: a run started while another is still going exits at once.
 
@@ -78,6 +80,7 @@ The sidebar sets up the next run:
 - **Job sources:** which job boards to scrape.
 - **Search keywords:** the domain keywords a job's title or description must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai".
 - **Letters:** a letter for every strong match (70 or more), or only for the best K, from 1 to 50. Each letter costs several LLM calls (draft, claim check, revisions), so a small K makes runs cheaper. With the best K, the other strong matches aren't recorded: the next run scores them again and they compete with the new jobs, and the digest says how many are waiting. A job that never makes the top K is scored again on every run while it's still listed.
+- **Notifications:** Telegram (the default), Gmail, or both. A job counts as sent once any chosen channel delivers it, so if Telegram is down but Gmail works, it isn't sent again the next day; if every channel fails, it's retried. Gmail sends the whole digest, letters included, as one email to the address in `.env`. The form warns when a chosen channel has no credentials there.
 - **Schedule:** off, every day, or every week at a chosen time; see [Schedule](#schedule).
 
 The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the domain keywords in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled. To apply new settings to them, **Clear history** in the sidebar deletes the saved jobs, so the next run scores every listed job again and drafts new letters, which costs OpenAI credit. It asks for confirmation and first copies the database to `data/seen_jobs.backup.sqlite3`; to undo, copy that file back to `data/seen_jobs.sqlite3`.
@@ -151,6 +154,7 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Structured job scoring
 - [x] Cover letter drafting with a claim check and revision loop
 - [x] Ranked Telegram digest
+- [x] Gmail as a second channel
 - [x] Tests and CI
 - [x] Results dashboard
 - [x] Choose the job sources in the dashboard

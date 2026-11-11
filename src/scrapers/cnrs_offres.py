@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from src.config import (
-    CNRS_BASE_URL, CNRS_INTERNSHIP_CONTRACT, CNRS_SEARCH_URL, DOMAIN_KEYWORDS, SCRAPER_HEADERS,
+    CNRS_BASE_URL, CNRS_SEARCH_URL, CONTRACTS, DOMAIN_KEYWORDS, SCRAPER_HEADERS,
 )
 from src.scrapers.inria_offres import compile_keywords, matches_any
 
@@ -31,18 +31,18 @@ def scrape_job_details(url, headers):
     return text.split(BOILERPLATE_START)[0].strip() or None
 
 
-def get_cnrs_jobs(domain_keywords=DOMAIN_KEYWORDS):
+def get_cnrs_jobs(domain_keywords=DOMAIN_KEYWORDS, contract_code=CONTRACTS["internship"]["site_codes"]["cnrs"]):
     """
-    Returns CNRS internships in the target domain.
-    The search is already limited to internship contracts, so only the domain filter is applied,
+    Returns CNRS offers of one contract type in the target domain.
+    The search form already filters on the contract type, so only the domain filter is applied,
     on the title and full description.
     Jobs whose details couldn't be fetched are kept with description=None, so dedup can report them.
     """
-    print(f"Fetching internship listings from: {CNRS_SEARCH_URL}...\n")
+    print(f"Fetching {contract_code} listings from: {CNRS_SEARCH_URL}...\n")
     try:
         response = requests.post(
             CNRS_SEARCH_URL,
-            data={"ContractType": CNRS_INTERNSHIP_CONTRACT, "Page": 0},
+            data={"ContractType": contract_code, "Page": 0},
             headers=SCRAPER_HEADERS,
             timeout=30,
         )
@@ -67,7 +67,7 @@ def get_cnrs_jobs(domain_keywords=DOMAIN_KEYWORDS):
             'lab': lab.get_text(strip=True) if lab else None,
         })
 
-    print(f"Found {len(job_dict)} internships. Fetching details...\n")
+    print(f"Found {len(job_dict)} offers. Fetching details...\n")
 
     # 2. Fetch details, then keep the jobs that match the domain
     job_listings = []
@@ -89,5 +89,5 @@ def get_cnrs_jobs(domain_keywords=DOMAIN_KEYWORDS):
 
         time.sleep(0.5)
 
-    print(f"\n{len(job_listings)} of {len(job_dict)} internships match the target domain.")
+    print(f"\n{len(job_listings)} of {len(job_dict)} offers match the target domain.")
     return job_listings

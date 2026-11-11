@@ -8,7 +8,7 @@ import pytest
 import requests
 
 from src.agents.nodes.draft_letter import candidate_name, ensure_signature, remove_sentence
-from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
+from src.config import DOMAIN_KEYWORDS, PHD_ROLE_KEYWORDS, ROLE_KEYWORDS
 from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
 from src.agents.nodes import scrape
 from src.scrapers import cea_offres, cnrs_offres, inria_offres
@@ -44,6 +44,26 @@ def test_internship_titles_pass_the_role_filter(title):
 ])
 def test_other_titles_fail_the_role_filter(title):
     assert not matches_any(ROLE, title)
+
+
+PHD_ROLE = compile_keywords(PHD_ROLE_KEYWORDS)
+
+
+@pytest.mark.parametrize("title", [
+    "PhD Position F/M Theory for Discrete Diffusion Models",
+    "Doctorant F/H Évaluation des risques liés aux modèles d’IA en Santé",
+    "Proposition de thèse : apprentissage profond pour la vision",
+])
+def test_phd_titles_pass_the_phd_role_filter(title):
+    assert matches_any(PHD_ROLE, title)
+
+
+@pytest.mark.parametrize("title", [
+    "Post-Doctoral Research Visit F/M Distributed Learning for Streaming Data",
+    "Master Internship in AI for biological microscopy",
+])
+def test_other_titles_fail_the_phd_role_filter(title):
+    assert not matches_any(PHD_ROLE, title)
 
 
 @pytest.mark.parametrize("text", [
@@ -183,7 +203,7 @@ def test_cea_scraper_pages_through_results_and_filters_on_position_text(monkeypa
     def get(url, params=None, **kwargs):
         if url == cea_offres.CEA_SEARCH_URL:
             requested_pages.append(params["page"])
-            assert params["facet_Contract"] == cea_offres.CEA_INTERNSHIP_CONTRACT
+            assert params["facet_Contract"] == 579   # "Stage", the default
             cards = "".join(f'<a class="ts-offer-card__title-link" href="{cea_offer_url(i)}">{t}</a>'
                             for i, t in result_pages.get(params["page"], []))
             return page(cards)
@@ -241,12 +261,28 @@ def test_scrape_node_passes_the_saved_keywords(monkeypatch):
     # CNRS and CEA filter on the contract type in their search form, so they only get the domain keywords.
     assert received == {
         "inria": {"role_keywords": ["PhD"], "domain_keywords": ["robotics"]},
-        "cnrs": {"domain_keywords": ["robotics"]},
-        "cea": {"domain_keywords": ["robotics"]},
+        "cnrs": {"domain_keywords": ["robotics"], "contract_code": "STAG"},
+        "cea": {"domain_keywords": ["robotics"], "contract_code": 579},
     }
     # The fakes accept anything, so check the real scrapers accept these arguments too.
     for name, keywords in received.items():
         inspect.signature(real[name]).bind(**keywords)
+
+
+def test_phd_search_uses_the_phd_codes_and_skips_ceas_site(monkeypatch, capsys):
+    received = {}
+    for name in ("inria", "cnrs", "cea"):
+        monkeypatch.setattr(scrape, f"get_{name}_jobs", lambda name=name, **keywords: received.update({name: keywords}) or [])
+
+    save_settings(contract_type="phd")
+    scrape.scrape_node({})
+
+    assert set(received) == {"inria", "cnrs"}   # CEA has no PhD filter
+    output = capsys.readouterr().out
+    assert "CEA has no PhD offers" in output
+    assert "failed" not in output               # skipped on purpose, not by an error
+    assert received["cnrs"]["contract_code"] == "DOCTOR"
+    assert received["inria"]["role_keywords"] == PHD_ROLE_KEYWORDS
 
 
 def test_scrape_node_uses_the_config_keywords_by_default(monkeypatch):
@@ -328,10 +364,14 @@ def test_broken_keywords_fall_back_without_resetting_the_sources(settings_file, 
 def test_saving_one_setting_keeps_the_others():
     save_settings(role_keywords=["PhD"], domain_keywords=["robotics"])
     save_settings(["inria"])
-    assert load_settings() == {"sources": ["inria"], "role_keywords": ["PhD"], "domain_keywords": ["robotics"]}
+    assert load_settings() == {
+        "sources": ["inria"], "contract_type": "internship", "role_keywords": ["PhD"], "domain_keywords": ["robotics"],
+    }
 
     save_settings(domain_keywords=["NLP"])
-    assert load_settings() == {"sources": ["inria"], "role_keywords": ["PhD"], "domain_keywords": ["NLP"]}
+    assert load_settings() == {
+        "sources": ["inria"], "contract_type": "internship", "role_keywords": ["PhD"], "domain_keywords": ["NLP"],
+    }
 
 
 @pytest.mark.parametrize("field", ["role_keywords", "domain_keywords"])
@@ -346,6 +386,53 @@ def test_saved_keywords_keep_accents_readable(settings_file):
     save_settings(role_keywords=["fin d’études"])
     with open(settings_file, encoding="utf-8") as f:
         assert "fin d’études" in f.read()
+
+
+def test_contract_type_defaults_to_internship():
+    settings = load_settings()
+    assert settings["contract_type"] == "internship"
+    assert settings["role_keywords"] == ROLE_KEYWORDS
+
+
+def test_a_saved_contract_type_brings_its_own_default_role_keywords(settings_file):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump({"contract_type": "phd"}, f)
+    assert load_settings()["role_keywords"] == PHD_ROLE_KEYWORDS
+
+
+@pytest.mark.parametrize("value", ["cdi", ["phd"], 5, None])
+def test_unknown_contract_type_falls_back_to_internship(settings_file, value):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump({"sources": ["cnrs"], "contract_type": value}, f)
+    settings = load_settings()
+    assert settings["contract_type"] == "internship"
+    assert settings["sources"] == ["cnrs"]
+
+
+def test_changing_the_contract_type_resets_the_role_keywords():
+    save_settings(role_keywords=["my own word"])
+    save_settings(contract_type="phd")
+    assert load_settings()["role_keywords"] == PHD_ROLE_KEYWORDS
+
+
+def test_keeping_the_contract_type_keeps_custom_role_keywords():
+    save_settings(role_keywords=["my own word"])
+    save_settings(contract_type="internship")
+    assert load_settings()["role_keywords"] == ["my own word"]
+
+
+def test_contract_type_and_role_keywords_saved_together_are_both_kept():
+    save_settings(contract_type="phd", role_keywords=["thèse"])
+    settings = load_settings()
+    assert settings["contract_type"] == "phd"
+    assert settings["role_keywords"] == ["thèse"]
+
+
+@pytest.mark.parametrize("value", ["cdi", ["phd"]])
+def test_unknown_contract_type_cannot_be_saved(settings_file, value):
+    with pytest.raises(ValueError):
+        save_settings(contract_type=value)
+    assert not os.path.exists(settings_file)
 
 
 # Removing flagged sentences

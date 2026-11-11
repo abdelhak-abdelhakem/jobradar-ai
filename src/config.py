@@ -28,10 +28,8 @@ INRIA_BASE_URL = "https://jobs.inria.fr"
 INRIA_SEARCH_URL = f"{INRIA_BASE_URL}/public/classic/en/offres"
 CNRS_BASE_URL = "https://emploi.cnrs.fr"
 CNRS_SEARCH_URL = f"{CNRS_BASE_URL}/Offres/Recherche.aspx"
-CNRS_INTERNSHIP_CONTRACT = "STAG"   # the search form's "Convention de stage" filter
 CEA_BASE_URL = "https://www.emploi.cea.fr"
 CEA_SEARCH_URL = f"{CEA_BASE_URL}/offre-de-emploi/liste-offres.aspx"
-CEA_INTERNSHIP_CONTRACT = 579   # the "Stage" contract filter
 CEA_PROFILES = [1898, 1909]     # "Mathématiques, information scientifique, logiciel" and "Systèmes d'information"
 CEA_MAX_PAGES = 15              # 20 offers per page; a safety stop in case pagination never ends
 SCRAPER_HEADERS = {
@@ -59,6 +57,28 @@ DOMAIN_KEYWORDS = [
     "langchain", "langgraph", "hugging face", "transformer", "transformers",
     "world model", "world models",
 ]
+# Inria titles PhD offers "PhD Position F/M ..." or "Doctorant F/H ...".
+PHD_ROLE_KEYWORDS = ["PhD", "Ph.D", "doctorant", "doctorante", "doctorat", "thèse", "contrat doctoral"]
+
+# The contract types a user can search for: name -> details. The single list the settings, the dashboard,
+# and the scoring schema are built from.
+# site_codes holds each job board's own contract filter. A board missing from it has no such filter and is
+# skipped: CEA publishes its PhD offers on another site. Inria has no filter, so the role keywords do its job.
+CONTRACTS = {
+    "internship": {
+        "label": "Internship",
+        "description": "an internship (stage)",
+        "site_codes": {"cnrs": "STAG", "cea": 579},   # "Convention de stage" and "Stage"
+        "role_keywords": ROLE_KEYWORDS,
+    },
+    "phd": {
+        "label": "PhD",
+        "description": "a PhD position (contrat doctoral, thèse)",
+        "site_codes": {"cnrs": "DOCTOR"},             # "Contrat doctoral"
+        "role_keywords": PHD_ROLE_KEYWORDS,
+    },
+}
+DEFAULT_CONTRACT = "internship"
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from src.config import (
-    CEA_BASE_URL, CEA_INTERNSHIP_CONTRACT, CEA_MAX_PAGES, CEA_PROFILES, CEA_SEARCH_URL,
+    CEA_BASE_URL, CEA_MAX_PAGES, CEA_PROFILES, CEA_SEARCH_URL, CONTRACTS,
     DOMAIN_KEYWORDS, SCRAPER_HEADERS,
 )
 from src.scrapers.inria_offres import compile_keywords, matches_any
@@ -57,9 +57,9 @@ def scrape_job_details(url, headers):
     return full_text, position_text
 
 
-def get_search_page(page):
+def get_search_page(page, contract_code):
     params = {
-        "facet_Contract": CEA_INTERNSHIP_CONTRACT,
+        "facet_Contract": contract_code,
         "facet_Profile": CEA_PROFILES,
         "page": page,
         "LCID": 1036,
@@ -69,21 +69,21 @@ def get_search_page(page):
     return BeautifulSoup(response.text, 'html.parser')
 
 
-def get_cea_jobs(domain_keywords=DOMAIN_KEYWORDS):
+def get_cea_jobs(domain_keywords=DOMAIN_KEYWORDS, contract_code=CONTRACTS["internship"]["site_codes"]["cea"]):
     """
-    Returns CEA internships in the target domain.
-    The search is limited to internships in the software and IT fields, so only the domain filter
+    Returns CEA offers of one contract type in the target domain.
+    The search is limited to that contract type in the software and IT fields, so only the domain filter
     is applied, on the title and the position description.
     Jobs whose details couldn't be fetched are kept with description=None, so dedup can report them.
     """
-    print(f"Fetching internship listings from: {CEA_SEARCH_URL}...\n")
+    print(f"Fetching contract {contract_code} listings from: {CEA_SEARCH_URL}...\n")
     domain_patterns = compile_keywords(domain_keywords)
 
     # 1. Gather the offers from every result page, until a page brings nothing new
     job_dict = {}
     for page in range(1, CEA_MAX_PAGES + 1):
         try:
-            soup = get_search_page(page)
+            soup = get_search_page(page, contract_code)
         except requests.RequestException as e:
             print(f"Error fetching search page {page}: {e}")
             if page == 1:
@@ -101,7 +101,7 @@ def get_cea_jobs(domain_keywords=DOMAIN_KEYWORDS):
             break
         time.sleep(0.5)
 
-    print(f"Found {len(job_dict)} internships. Fetching details...\n")
+    print(f"Found {len(job_dict)} offers. Fetching details...\n")
 
     # 2. Fetch details, then keep the jobs that match the domain
     job_listings = []
@@ -125,5 +125,5 @@ def get_cea_jobs(domain_keywords=DOMAIN_KEYWORDS):
 
         time.sleep(0.5)
 
-    print(f"\n{len(job_listings)} of {len(job_dict)} internships match the target domain.")
+    print(f"\n{len(job_listings)} of {len(job_dict)} offers match the target domain.")
     return job_listings

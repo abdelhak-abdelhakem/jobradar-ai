@@ -144,7 +144,9 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 
 ## About
 
-Built as the capstone project of a 4-week LangGraph preparation program, with the first version completed in 15 days (June 10–25, 2026). Preceded by:
+Built as the capstone project of a 4-week LangGraph preparation program, with the first version completed in 15 days (June 10–25, 2026). Presented on November 11, 2026, as the project for the *Séminaires et Workshop IA* module at Université Djillali Liabès.
+
+Preceded by:
 
 - **[learning-langgraph](https://github.com/abdelhak-abdelhakem/learning-langgraph)** — exercises and mini-projects covering LangGraph, Pydantic structured output, hybrid RAG, web scraping, and Telegram integration
 - **[Hasnaoui Bot](https://github.com/abdelhak-abdelhakem)** — production enterprise RAG chatbot (Context Precision 0.892, Answer Relevancy 0.702, $0.00079/query)

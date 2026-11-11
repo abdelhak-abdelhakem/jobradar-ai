@@ -365,14 +365,16 @@ def test_broken_keywords_fall_back_without_resetting_the_sources(settings_file, 
 def test_saving_one_setting_keeps_the_others():
     save_settings(contract_type="phd", domain_keywords=["robotics"])
     save_settings(["inria"])
-    assert load_settings() == {
-        "sources": ["inria"], "contract_type": "phd", "domain_keywords": ["robotics"], "delivery": "all", "top_k": 5,
-    }
+    assert_settings(sources=["inria"], contract_type="phd", domain_keywords=["robotics"], delivery="all")
 
     save_settings(domain_keywords=["NLP"], delivery="top_k", top_k=3)
-    assert load_settings() == {
-        "sources": ["inria"], "contract_type": "phd", "domain_keywords": ["NLP"], "delivery": "top_k", "top_k": 3,
-    }
+    assert_settings(sources=["inria"], contract_type="phd", domain_keywords=["NLP"], delivery="top_k", top_k=3)
+
+
+def assert_settings(**expected):
+    """Compares only the given settings, so adding a new setting doesn't break this test."""
+    settings = load_settings()
+    assert {name: settings[name] for name in expected} == expected
 
 
 def test_keywords_cannot_be_saved_empty(settings_file):

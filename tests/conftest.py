@@ -1,6 +1,7 @@
 import pytest
 from langchain_core.runnables import RunnableLambda
 
+from src import scheduling
 from src.agents.nodes import draft_letter, score
 from src.agents.state import JobMatch, LetterCheck, UnsupportedClaim
 from src.utils import telegram
@@ -107,6 +108,29 @@ def run_lock(monkeypatch, tmp_path):
     path = str(tmp_path / "run.lock")
     monkeypatch.setattr("src.config.RUN_LOCK_PATH", path)
     return path
+
+
+class FakeSystemd:
+    """Records systemctl commands instead of running them. Set fail to make the next command fail."""
+
+    def __init__(self):
+        self.commands = []
+        self.fail = False
+
+    def systemctl(self, *args):
+        if self.fail:
+            raise scheduling.ScheduleError("systemctl failed")
+        self.commands.append(args)
+        return ""
+
+
+@pytest.fixture(autouse=True)
+def systemd(monkeypatch, tmp_path):
+    """Every test gets a fake systemctl and its own unit folder, so no test touches the real systemd."""
+    fake = FakeSystemd()
+    monkeypatch.setattr(scheduling, "systemctl", fake.systemctl)
+    monkeypatch.setattr(scheduling, "UNIT_DIR", str(tmp_path / "systemd-user"))
+    return fake
 
 
 @pytest.fixture

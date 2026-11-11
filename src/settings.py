@@ -6,6 +6,7 @@ Role keywords aren't a setting: they come from the contract type (config.CONTRAC
 import copy
 import json
 import os
+import re
 
 from src import config
 
@@ -16,12 +17,20 @@ SOURCES = {"inria": "Inria", "cnrs": "CNRS", "cea": "CEA"}
 # aren't recorded, so the next run scores them again and they compete with the new jobs.
 DELIVERY_MODES = ("all", "top_k")
 
+# When a systemd timer runs the pipeline (see src/scheduling.py). The day only matters for "weekly".
+SCHEDULES = ("off", "daily", "weekly")
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+SCHEDULE_TIME = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")   # 24-hour HH:MM
+
 DEFAULT_SETTINGS = {
     "sources": list(SOURCES),
     "contract_type": config.DEFAULT_CONTRACT,
     "domain_keywords": list(config.DOMAIN_KEYWORDS),
     "delivery": "all",
     "top_k": 5,
+    "schedule": "off",
+    "schedule_day": "Mon",
+    "schedule_time": "08:00",
 }
 
 
@@ -38,6 +47,10 @@ def default_settings() -> dict:
 def is_top_k(value) -> bool:
     """True for a whole number from 1 to MAX_TOP_K. bool is a subclass of int in Python, so it's excluded."""
     return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= config.MAX_TOP_K
+
+
+def is_schedule_time(value) -> bool:
+    return isinstance(value, str) and SCHEDULE_TIME.fullmatch(value) is not None
 
 
 def clean_sources(sources) -> list[str]:
@@ -99,7 +112,14 @@ def load_settings(path: str | None = None) -> dict:
     elif "domain_keywords" in saved:
         print(f"[!] No valid domain_keywords in {path}. Using the default keywords.")
 
-    for name, is_valid in (("delivery", lambda value: value in DELIVERY_MODES), ("top_k", is_top_k)):
+    checks = (
+        ("delivery", lambda value: value in DELIVERY_MODES),
+        ("top_k", is_top_k),
+        ("schedule", lambda value: value in SCHEDULES),
+        ("schedule_day", lambda value: value in WEEKDAYS),
+        ("schedule_time", is_schedule_time),
+    )
+    for name, is_valid in checks:
         value = saved.get(name)
         if is_valid(value):
             settings[name] = value
@@ -115,6 +135,9 @@ def save_settings(
     contract_type: str | None = None,
     delivery: str | None = None,
     top_k: int | None = None,
+    schedule: str | None = None,
+    schedule_day: str | None = None,
+    schedule_time: str | None = None,
     path: str | None = None,
 ) -> dict:
     """
@@ -144,6 +167,21 @@ def save_settings(
         if not is_top_k(top_k):
             raise ValueError(f"K must be a whole number from 1 to {config.MAX_TOP_K}.")
         settings["top_k"] = top_k
+
+    if schedule is not None:
+        if schedule not in SCHEDULES:
+            raise ValueError(f"Unknown schedule: {schedule}.")
+        settings["schedule"] = schedule
+
+    if schedule_day is not None:
+        if schedule_day not in WEEKDAYS:
+            raise ValueError(f"Unknown day: {schedule_day}.")
+        settings["schedule_day"] = schedule_day
+
+    if schedule_time is not None:
+        if not is_schedule_time(schedule_time):
+            raise ValueError("The time must be in 24-hour HH:MM format, such as 08:00.")
+        settings["schedule_time"] = schedule_time
 
     if domain_keywords is not None:
         settings["domain_keywords"] = clean_keywords(domain_keywords)

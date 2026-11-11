@@ -37,9 +37,15 @@ def _digest_lines(ranked: list[ScoredJob], state: JobRadarState) -> list[str]:
     if not ranked:
         lines.append("No matches today.")
 
-    retries = state["failed_scores"] + len(strong_matches(state["scored_jobs"])) - len(ranked)
+    retries = state["failed_scores"] + len(state["letter_keys"]) - len(ranked)
     if retries:
         lines.append(f"⚠️ {retries} jobs failed and will be tried again on the next run.")
+
+    waiting = len(strong_matches(state["scored_jobs"])) - len(state["letter_keys"])
+    if waiting:
+        jobs = "strong match" if waiting == 1 else "strong matches"
+        lines.append(f"{waiting} more {jobs} didn't make the top {len(state['letter_keys'])} "
+                     "and will be scored again on the next run.")
 
     for rank, item in enumerate(ranked, 1):
         lines.append(f'{rank}. <b>{item["job_match"].match_score}/100</b> {_link(item)}')
@@ -62,19 +68,16 @@ def _send_job(rank: int, item: ScoredJob, letter: str, issues: list[LetterIssue]
 
 def notify_telegram_node(state: JobRadarState) -> dict:
     """
-    Sends a ranked digest, then each strong match with its letter.
+    Sends a ranked digest, then each job chosen for a letter, with its letter.
     Jobs are recorded as seen only once they're handled, so failed sends are retried on the next run.
+    Strong matches that weren't chosen, outside the best K, are left unseen too, so they compete again.
     """
     letters = state["cover_letters"]
-    strong = strong_matches(state["scored_jobs"])
-    strong_keys = {job_key(item["job"]) for item in strong}
+    by_key = {job_key(item["job"]): item for item in state["scored_jobs"]}
+    strong_keys = {job_key(item["job"]) for item in strong_matches(state["scored_jobs"])}
 
-    # A strong match whose letter failed isn't sent. It's left unseen and retried next run.
-    ranked = sorted(
-        (item for item in strong if job_key(item["job"]) in letters),
-        key=lambda item: item["job_match"].match_score,
-        reverse=True,
-    )
+    # letter_keys is already best first. A job whose letter failed isn't sent, and is retried next run.
+    ranked = [by_key[key] for key in state["letter_keys"] if key in letters]
 
     # Weak matches need no notification, so they're finished as soon as they've been scored.
     finished = [_seen_record(s, state) for s in state["scored_jobs"] if job_key(s["job"]) not in strong_keys]

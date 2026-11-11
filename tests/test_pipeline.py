@@ -107,6 +107,64 @@ def test_failed_letter_is_retried_next_run(world):
     assert world.letter in world.sent
 
 
+# Delivery: every strong match, or only the best K
+
+def four_jobs(world):
+    world.jobs = [make_job("1", "Internship A"), make_job("2", "Internship B"),
+                  make_job("3", "Internship C"), make_job("4", "Internship weak")]
+    world.scores = {"weak": 30, "Internship A": 80, "Internship B": 95, "Internship C": 75}
+
+
+def test_top_k_drafts_letters_only_for_the_best_k(world):
+    save_settings(delivery="top_k", top_k=2)
+    four_jobs(world)
+
+    result = run()
+
+    assert result["letter_keys"] == ["inria:2", "inria:1"]
+    assert world.calls["draft"] == 2
+    assert "1 more strong match didn't make the top 2" in all_text(world)
+    # The weak job is finished; the strong job outside the top 2 is left unseen, so it competes again.
+    assert seen_keys() == {"inria:1", "inria:2", "inria:4"}
+
+
+def test_a_job_outside_the_top_k_competes_again_on_the_next_run(world):
+    save_settings(delivery="top_k", top_k=2)
+    four_jobs(world)
+    run()
+    world.calls["score"] = 0
+
+    result = run()
+
+    assert world.calls["score"] == 1              # only Internship C is scored again
+    assert result["letter_keys"] == ["inria:3"]   # and with no better job left, it gets its letter
+    assert seen_keys() == {"inria:1", "inria:2", "inria:3", "inria:4"}
+
+
+def test_every_strong_match_gets_a_letter_by_default(world):
+    four_jobs(world)
+    run()
+    assert world.calls["draft"] == 3
+    assert "didn't make the top" not in all_text(world)
+
+
+def test_a_settings_change_during_a_run_does_not_change_its_letters(world, monkeypatch):
+    save_settings(delivery="top_k", top_k=1)
+    four_jobs(world)
+    draft = world.fake_draft
+
+    def draft_while_the_user_changes_the_settings(inputs):
+        save_settings(delivery="all")
+        return draft(inputs)
+
+    monkeypatch.setattr(world, "fake_draft", draft_while_the_user_changes_the_settings)
+    run()
+
+    assert world.calls["draft"] == 1
+    assert world.sent.count(world.letter) == 1
+    assert seen_keys() == {"inria:2", "inria:4"}
+
+
 # Scoring
 
 def test_other_contract_cannot_reach_the_threshold(world):

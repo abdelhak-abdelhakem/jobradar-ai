@@ -9,7 +9,6 @@ from src.agents.state import (
     LetterIssue,
     format_job,
     job_key,
-    strong_matches,
 )
 from src.config import MAX_LETTER_REVISIONS
 from src.llm import get_llm, run_batch
@@ -172,8 +171,9 @@ def _jobs_by_key(state: JobRadarState) -> dict:
 
 
 def draft_letter_node(state: JobRadarState) -> dict:
-    """Writes a letter for each strong match. A job whose letter fails is retried on the next run."""
-    jobs = [s["job"] for s in strong_matches(state["scored_jobs"])]
+    """Writes a letter for each job chosen for one. A job whose letter fails is retried on the next run."""
+    jobs_by_key = _jobs_by_key(state)
+    jobs = [jobs_by_key[key] for key in state["letter_keys"]]
     inputs = [{"profile": state["profile"], "job": format_job(job)} for job in jobs]
 
     letters = {}

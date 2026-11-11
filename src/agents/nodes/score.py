@@ -1,6 +1,6 @@
 from langchain_core.prompts import PromptTemplate
 
-from src.agents.state import JobMatch, JobRadarState, ScoredJob, format_job, job_key
+from src.agents.state import JobMatch, JobRadarState, ScoredJob, choose_for_letters, format_job, job_key
 from src.config import (
     ADJACENT_DOMAIN_MAX_SCORE,
     CONTRACTS,
@@ -72,9 +72,13 @@ def _apply_score_caps(match: JobMatch, target: str) -> JobMatch:
 
 
 def score_job_node(state: JobRadarState) -> dict:
-    """Scores jobs in parallel. Failed jobs are left out and tried again on the next run."""
+    """
+    Scores jobs in parallel, then chooses which strong matches get a letter.
+    Failed jobs are left out and tried again on the next run.
+    """
     jobs = state["new_jobs"]
-    target = load_settings()["contract_type"]
+    settings = load_settings()
+    target = settings["contract_type"]
     prompt_values = {
         "profile": state["profile"],
         "target": CONTRACTS[target]["description"],
@@ -93,4 +97,7 @@ def score_job_node(state: JobRadarState) -> dict:
             failed += 1
             print(f"  [!] Could not score {job_key(job)}: {result!r}")
 
-    return {"scored_jobs": scored, "failed_scores": failed}
+    # Chosen once here, so a settings change in the dashboard during a run can't make the
+    # letter and notification steps disagree.
+    top_k = settings["top_k"] if settings["delivery"] == "top_k" else None
+    return {"scored_jobs": scored, "failed_scores": failed, "letter_keys": choose_for_letters(scored, top_k)}

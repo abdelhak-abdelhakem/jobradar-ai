@@ -12,10 +12,16 @@ from src import config
 # Every job board the pipeline can scrape, in the order they run: name -> label shown to the user.
 SOURCES = {"inria": "Inria", "cnrs": "CNRS", "cea": "CEA"}
 
+# Which strong matches get a letter: every one, or only the best K. Strong matches outside the best K
+# aren't recorded, so the next run scores them again and they compete with the new jobs.
+DELIVERY_MODES = ("all", "top_k")
+
 DEFAULT_SETTINGS = {
     "sources": list(SOURCES),
     "contract_type": config.DEFAULT_CONTRACT,
     "domain_keywords": list(config.DOMAIN_KEYWORDS),
+    "delivery": "all",
+    "top_k": 5,
 }
 
 
@@ -27,6 +33,11 @@ def is_contract(value) -> bool:
 def default_settings() -> dict:
     """A fresh copy of the defaults, so callers can change it without changing DEFAULT_SETTINGS."""
     return copy.deepcopy(DEFAULT_SETTINGS)
+
+
+def is_top_k(value) -> bool:
+    """True for a whole number from 1 to MAX_TOP_K. bool is a subclass of int in Python, so it's excluded."""
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= config.MAX_TOP_K
 
 
 def clean_sources(sources) -> list[str]:
@@ -88,6 +99,13 @@ def load_settings(path: str | None = None) -> dict:
     elif "domain_keywords" in saved:
         print(f"[!] No valid domain_keywords in {path}. Using the default keywords.")
 
+    for name, is_valid in (("delivery", lambda value: value in DELIVERY_MODES), ("top_k", is_top_k)):
+        value = saved.get(name)
+        if is_valid(value):
+            settings[name] = value
+        elif name in saved:
+            print(f"[!] Invalid {name} in {path}. Using {settings[name]}.")
+
     return settings
 
 
@@ -95,6 +113,8 @@ def save_settings(
     sources: list[str] | None = None,
     domain_keywords: list[str] | None = None,
     contract_type: str | None = None,
+    delivery: str | None = None,
+    top_k: int | None = None,
     path: str | None = None,
 ) -> dict:
     """
@@ -114,6 +134,16 @@ def save_settings(
         if not is_contract(contract_type):
             raise ValueError(f"Unknown contract type: {contract_type}.")
         settings["contract_type"] = contract_type
+
+    if delivery is not None:
+        if delivery not in DELIVERY_MODES:
+            raise ValueError(f"Unknown delivery mode: {delivery}.")
+        settings["delivery"] = delivery
+
+    if top_k is not None:
+        if not is_top_k(top_k):
+            raise ValueError(f"K must be a whole number from 1 to {config.MAX_TOP_K}.")
+        settings["top_k"] = top_k
 
     if domain_keywords is not None:
         settings["domain_keywords"] = clean_keywords(domain_keywords)

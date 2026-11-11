@@ -7,7 +7,10 @@ from unittest import mock
 import pytest
 import requests
 
+from conftest import make_job, make_match
+
 from src.agents.nodes.draft_letter import candidate_name, ensure_signature, remove_sentence
+from src.agents.state import choose_for_letters
 from src.config import DOMAIN_KEYWORDS, PHD_ROLE_KEYWORDS, ROLE_KEYWORDS
 from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
 from src.agents.nodes import scrape
@@ -362,10 +365,14 @@ def test_broken_keywords_fall_back_without_resetting_the_sources(settings_file, 
 def test_saving_one_setting_keeps_the_others():
     save_settings(contract_type="phd", domain_keywords=["robotics"])
     save_settings(["inria"])
-    assert load_settings() == {"sources": ["inria"], "contract_type": "phd", "domain_keywords": ["robotics"]}
+    assert load_settings() == {
+        "sources": ["inria"], "contract_type": "phd", "domain_keywords": ["robotics"], "delivery": "all", "top_k": 5,
+    }
 
-    save_settings(domain_keywords=["NLP"])
-    assert load_settings() == {"sources": ["inria"], "contract_type": "phd", "domain_keywords": ["NLP"]}
+    save_settings(domain_keywords=["NLP"], delivery="top_k", top_k=3)
+    assert load_settings() == {
+        "sources": ["inria"], "contract_type": "phd", "domain_keywords": ["NLP"], "delivery": "top_k", "top_k": 3,
+    }
 
 
 def test_keywords_cannot_be_saved_empty(settings_file):
@@ -423,6 +430,64 @@ def test_unknown_contract_type_cannot_be_saved(settings_file, value):
     with pytest.raises(ValueError):
         save_settings(contract_type=value)
     assert not os.path.exists(settings_file)
+
+
+def test_delivery_defaults_to_every_strong_match():
+    settings = load_settings()
+    assert settings["delivery"] == "all"
+    assert settings["top_k"] == 5
+
+
+def test_an_invalid_delivery_mode_falls_back_to_all(settings_file):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump({"sources": ["cnrs"], "delivery": "best", "top_k": 3}, f)
+    settings = load_settings()
+    assert settings["delivery"] == "all"
+    assert settings["top_k"] == 3          # the valid K is kept
+    assert settings["sources"] == ["cnrs"]
+
+
+@pytest.mark.parametrize("top_k", [0, 51, "3", True, 2.5, None])
+def test_an_invalid_k_falls_back_to_5(settings_file, top_k):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump({"delivery": "top_k", "top_k": top_k}, f)
+    settings = load_settings()
+    assert settings["top_k"] == 5
+    assert settings["delivery"] == "top_k"  # the valid mode is kept
+
+
+@pytest.mark.parametrize("arguments", [{"delivery": "best"}, {"top_k": 0}, {"top_k": 51}, {"top_k": 2.5}, {"top_k": True}])
+def test_invalid_delivery_settings_cannot_be_saved(settings_file, arguments):
+    with pytest.raises(ValueError):
+        save_settings(**arguments)
+    assert not os.path.exists(settings_file)
+
+
+# Choosing which strong matches get a letter
+
+def scored(title, score_value):
+    return {"job": make_job(title, title), "job_match": make_match(score_value), "llm_score": score_value}
+
+
+def test_every_strong_match_is_chosen_best_first():
+    jobs = [scored("A", 75), scored("B", 90), scored("C", 40), scored("D", 70)]
+    assert choose_for_letters(jobs, None) == ["inria:B", "inria:A", "inria:D"]
+
+
+def test_top_k_keeps_the_best_k_strong_matches():
+    jobs = [scored("A", 75), scored("B", 90), scored("C", 40), scored("D", 70)]
+    assert choose_for_letters(jobs, 2) == ["inria:B", "inria:A"]
+
+
+def test_top_k_never_adds_weak_jobs():
+    jobs = [scored("A", 75), scored("C", 40)]
+    assert choose_for_letters(jobs, 5) == ["inria:A"]
+
+
+def test_ties_are_broken_by_title_so_runs_agree():
+    jobs = [scored("Zeta", 80), scored("Alpha", 80), scored("Mid", 80)]
+    assert choose_for_letters(jobs, 2) == ["inria:Alpha", "inria:Mid"]
+    assert choose_for_letters(list(reversed(jobs)), 2) == ["inria:Alpha", "inria:Mid"]
 
 
 # Removing flagged sentences

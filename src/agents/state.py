@@ -73,6 +73,7 @@ class JobRadarState(TypedDict):
     profile: str                        # written by load_profile_node
     scored_jobs: list[ScoredJob]        # written by score_job_node
     failed_scores: int                  # written by score_job_node
+    letter_keys: list[str]              # strong matches chosen for a letter, best first; written by score_job_node
     cover_letters: dict[str, str]       # job key -> letter; written by draft and revise nodes
     letter_issues: dict[str, list[LetterIssue]]  # job key -> problems; written by verify node
     revision_round: int                 # written by revise_letter_node
@@ -86,6 +87,7 @@ def initial_state() -> JobRadarState:
         "profile": "",
         "scored_jobs": [],
         "failed_scores": 0,
+        "letter_keys": [],
         "cover_letters": {},
         "letter_issues": {},
         "revision_round": 0,
@@ -100,6 +102,17 @@ def job_key(job: Job) -> str:
 
 def strong_matches(scored_jobs: list[ScoredJob]) -> list[ScoredJob]:
     return [s for s in scored_jobs if s["job_match"].match_score >= MATCH_SCORE_THRESHOLD]
+
+
+def choose_for_letters(scored_jobs: list[ScoredJob], top_k: int | None) -> list[str]:
+    """
+    Returns the keys of the strong matches that get a letter, best first: all of them, or the best top_k.
+    Ties are broken by title, so the same jobs are chosen on every run.
+    """
+    ranked = sorted(strong_matches(scored_jobs), key=lambda s: (-s["job_match"].match_score, s["job"]["title"]))
+    if top_k is not None:
+        ranked = ranked[:top_k]
+    return [job_key(s["job"]) for s in ranked]
 
 
 def format_job(job: Job) -> str:

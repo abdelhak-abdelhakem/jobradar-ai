@@ -248,7 +248,9 @@ def test_choosing_phd_keeps_the_domain_keywords(db):
     click_save(app, "contract")
 
     assert "looks for PhD offers" in app.sidebar.success[0].value
-    assert load_settings() == {"sources": ["inria", "cnrs", "cea"], "contract_type": "phd", "domain_keywords": ["robotics"]}
+    settings = load_settings()
+    assert settings["contract_type"] == "phd"
+    assert settings["domain_keywords"] == ["robotics"]
 
 
 def test_jobs_show_their_contract_type(db):

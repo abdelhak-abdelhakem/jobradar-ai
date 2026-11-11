@@ -16,6 +16,7 @@ SETTINGS_PATH = os.path.join(BASE_DIR, "data", "settings.json")   # written by t
 
 # Scoring
 MATCH_SCORE_THRESHOLD = 70      # at or above this, a job gets a letter and a notification
+MAX_TOP_K = 50                  # the highest "only the best K" value the settings accept
 WRONG_CONTRACT_MAX_SCORE = 40  # jobs with another contract type than the one searched for can never reach the threshold
 NO_DOMAIN_FIT_MAX_SCORE = 60    # neither can jobs with no link to the candidate's experience
 ADJACENT_DOMAIN_MAX_SCORE = 79  # related experience can qualify, but can't reach the top band

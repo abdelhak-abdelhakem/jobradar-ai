@@ -5,13 +5,13 @@ from src.agents.nodes.draft_letter import draft_letter_node, revise_letter_node,
 from src.agents.nodes.notify import notify_telegram_node
 from src.agents.nodes.score import load_profile_node, score_job_node
 from src.agents.nodes.scrape import scrape_node
-from src.agents.state import JobRadarState, strong_matches
+from src.agents.state import JobRadarState
 from src.config import MAX_LETTER_REVISIONS
 
 
 def route_by_score(state: JobRadarState) -> str:
-    """Drafts letters if any job is a strong match; otherwise goes straight to the digest."""
-    return "draft_letter_node" if strong_matches(state["scored_jobs"]) else "notify_telegram_node"
+    """Drafts letters if any job was chosen for one; otherwise goes straight to the digest."""
+    return "draft_letter_node" if state["letter_keys"] else "notify_telegram_node"
 
 
 def route_after_verify(state: JobRadarState) -> str:

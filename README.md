@@ -66,7 +66,7 @@ cp data/profile/example_profile.md data/profile/my_profile.md   # then replace w
 python -m scheduler.run_daily
 ```
 
-The first run scores every matching job. Later runs only process new ones. A run sends a Telegram message even when nothing matches, so you can tell a quiet day from a broken pipeline. It runs once per call, so use cron or similar to run it daily.
+The first run scores every matching job. Later runs only process new ones. A run sends a Telegram message even when nothing matches, so you can tell a quiet day from a broken pipeline. Each call runs the pipeline once; to run it automatically, see [Schedule](#schedule). Two runs never overlap: a run started while another is still going exits at once.
 
 ## Dashboard
 
@@ -78,12 +78,28 @@ The sidebar sets up the next run:
 - **Job sources:** which job boards to scrape.
 - **Search keywords:** the domain keywords a job's title or description must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai".
 - **Letters:** a letter for every strong match (70 or more), or only for the best K, from 1 to 50. Each letter costs several LLM calls (draft, claim check, revisions), so a small K makes runs cheaper. With the best K, the other strong matches aren't recorded: the next run scores them again and they compete with the new jobs, and the digest says how many are waiting. A job that never makes the top K is scored again on every run while it's still listed.
+- **Schedule:** off, every day, or every week at a chosen time; see [Schedule](#schedule).
 
 The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the domain keywords in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled. To apply new settings to them, **Clear history** in the sidebar deletes the saved jobs, so the next run scores every listed job again and drafts new letters, which costs OpenAI credit. It asks for confirmation and first copies the database to `data/seen_jobs.backup.sqlite3`; to undo, copy that file back to `data/seen_jobs.sqlite3`.
 
 ```bash
 python -m streamlit run dashboard/app.py
 ```
+
+## Schedule
+
+The dashboard's **Schedule** form runs the pipeline every day or every week at a chosen time, on Linux. The dashboard can't run it itself, because Streamlit only runs while its page is open, so the form installs a systemd user timer in `~/.config/systemd/user/` (no `sudo` needed):
+
+- `jobradar.timer` wakes up at the chosen time, and `jobradar.service` runs `python -m scheduler.run_daily`.
+- The computer must be on. A run missed while it was off happens as soon as it's back on (`Persistent=true`).
+- Choosing **Off** stops the timer and removes both files.
+
+```bash
+systemctl --user list-timers jobradar.timer   # when the next run is
+journalctl --user -u jobradar.service         # what the runs printed
+```
+
+User timers run while you're logged in. To run them when you're logged out too, run `loginctl enable-linger` once. On Windows or macOS, use Task Scheduler or launchd to run `python -m scheduler.run_daily` instead.
 
 ## Tests
 
@@ -150,7 +166,7 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [ ] More job sources that allow automated access
 - [ ] Job normalization and dedup across sources
 - [ ] Application tracking
-- [ ] Daily scheduled deployment
+- [x] Scheduled runs with a systemd timer
 
 ---
 

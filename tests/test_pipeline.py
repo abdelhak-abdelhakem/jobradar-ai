@@ -1,4 +1,6 @@
 """Runs the real graph end to end, with the LLM, Telegram, and the job board faked."""
+import fcntl
+
 from conftest import make_job, make_match
 from langchain_core.prompts import PromptTemplate
 
@@ -15,6 +17,7 @@ from src.config import (
 )
 from src.db.seen_jobs import seen_keys
 from src.settings import save_settings
+from scheduler import run_daily
 
 
 def run():
@@ -350,3 +353,20 @@ def test_quiet_day_still_sends_a_message(world):
     result = run()
     assert result["digest_sent"] is True
     assert "No matches today" in world.sent[0]
+
+
+# Running on a schedule
+
+def test_run_daily_runs_the_pipeline(world):
+    assert run_daily.main() is True
+    assert world.calls["score"] == 1
+
+
+def test_a_run_is_skipped_while_another_holds_the_lock(world, run_lock, capsys):
+    with open(run_lock, "w") as other_run:
+        fcntl.flock(other_run, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert run_daily.main() is False
+
+    assert world.calls["score"] == 0
+    assert "already in progress" in capsys.readouterr().out
+    assert run_daily.main() is True   # the lock is free once the other run ends

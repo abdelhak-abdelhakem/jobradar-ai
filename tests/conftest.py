@@ -101,6 +101,14 @@ def settings_file(monkeypatch, tmp_path):
     return path
 
 
+@pytest.fixture(autouse=True)
+def run_lock(monkeypatch, tmp_path):
+    """Every test gets its own lock file, so a test never waits on, or blocks, a real run."""
+    path = str(tmp_path / "run.lock")
+    monkeypatch.setattr("src.config.RUN_LOCK_PATH", path)
+    return path
+
+
 @pytest.fixture
 def world(monkeypatch, tmp_path):
     fake = FakeWorld()

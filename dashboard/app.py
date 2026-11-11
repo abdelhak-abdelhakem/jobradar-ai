@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from src.agents.nodes.scrape import FILTERED_BY_CONTRACT
-from src.config import CONTRACTS, MATCH_SCORE_THRESHOLD
+from src.config import CONTRACTS, MATCH_SCORE_THRESHOLD, MAX_TOP_K
 from src.db.seen_jobs import all_seen, backup_path, clear_seen
 from src.settings import SOURCES, load_settings, save_settings
 
@@ -161,6 +161,37 @@ def keyword_settings() -> None:
             st.sidebar.success("Saved. The next run uses these keywords. Jobs already handled aren't scored again.")
 
 
+DELIVERY_LABELS = {"all": "Every strong match", "top_k": "Only the best K"}
+
+
+def delivery_settings() -> None:
+    """Sidebar form that chooses which strong matches get a letter: all of them, or the best K."""
+    current = load_settings()
+
+    with st.sidebar.form("delivery"):
+        st.markdown("**Letters**")
+        delivery = st.radio(
+            "Write letters for",
+            list(DELIVERY_LABELS),
+            index=list(DELIVERY_LABELS).index(current["delivery"]),
+            format_func=DELIVERY_LABELS.get,
+        )
+        top_k = st.number_input("K", min_value=1, max_value=MAX_TOP_K, value=current["top_k"], step=1)
+        st.caption(
+            f"A strong match scores {MATCH_SCORE_THRESHOLD} or more, and each letter costs several LLM calls. "
+            "With the best K, the other strong matches aren't recorded, so the next run scores them again "
+            "and they compete with the new jobs."
+        )
+        saved = st.form_submit_button("Save")
+
+    if saved:
+        save_settings(delivery=delivery, top_k=int(top_k))
+        if delivery == "top_k":
+            st.sidebar.success(f"Saved. The next run writes letters for the best {int(top_k)} strong matches.")
+        else:
+            st.sidebar.success("Saved. The next run writes a letter for every strong match.")
+
+
 def history_settings() -> None:
     """Sidebar form that clears the finished jobs, so the next run scores them again with the new settings."""
     count = len(all_seen())
@@ -242,6 +273,7 @@ def main() -> None:
     contract_settings()
     source_settings()
     keyword_settings()
+    delivery_settings()
     history_settings()
 
     jobs = all_seen()

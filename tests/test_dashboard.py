@@ -260,6 +260,40 @@ def test_jobs_show_their_contract_type(db):
     assert "Contract: PhD" in app.caption[1].value
 
 
+# Delivery in the sidebar
+
+def test_delivery_defaults_to_every_strong_match(db):
+    app = run_app()
+    assert app.sidebar.radio[0].value == "all"
+    assert app.sidebar.number_input[0].value == 5
+
+
+def test_sidebar_saves_top_k(db):
+    app = run_app()
+    app.sidebar.radio[0].set_value("top_k")
+    app.sidebar.number_input[0].set_value(3)
+    click_save(app, "delivery")
+
+    assert "best 3 strong matches" in app.sidebar.success[0].value
+    settings = load_settings()
+    assert (settings["delivery"], settings["top_k"]) == ("top_k", 3)
+    assert run_app().sidebar.number_input[0].value == 3
+
+
+def test_switching_back_to_every_match_remembers_k(db):
+    app = run_app()
+    app.sidebar.radio[0].set_value("top_k")
+    app.sidebar.number_input[0].set_value(3)
+    click_save(app, "delivery")
+
+    app = run_app()
+    app.sidebar.radio[0].set_value("all")
+    click_save(app, "delivery")
+
+    assert "every strong match" in app.sidebar.success[0].value
+    assert load_settings()["top_k"] == 3
+
+
 # Clearing the history
 
 def history_form(app):

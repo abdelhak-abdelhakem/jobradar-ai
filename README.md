@@ -77,6 +77,7 @@ The sidebar sets up the next run:
 - **Contract type:** an internship or a PhD position. CNRS and CEA filter on it in their own search forms; CEA publishes its PhD offers on another site, so PhD searches skip it. Inria has no such filter, so a job title there must contain one of the contract type's role keywords, such as "stage" or "M2" for internships and "PhD" or "thèse" for PhD positions. These come from the contract type in `src/config.py` and aren't a separate setting, so they can never disagree with it.
 - **Job sources:** which job boards to scrape.
 - **Search keywords:** the domain keywords a job's title or description must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai".
+- **Letters:** a letter for every strong match (70 or more), or only for the best K, from 1 to 50. Each letter costs several LLM calls (draft, claim check, revisions), so a small K makes runs cheaper. With the best K, the other strong matches aren't recorded: the next run scores them again and they compete with the new jobs, and the digest says how many are waiting. A job that never makes the top K is scored again on every run while it's still listed.
 
 The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the domain keywords in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled. To apply new settings to them, **Clear history** in the sidebar deletes the saved jobs, so the next run scores every listed job again and drafts new letters, which costs OpenAI credit. It asks for confirmation and first copies the database to `data/seen_jobs.backup.sqlite3`; to undo, copy that file back to `data/seen_jobs.sqlite3`.
 
@@ -140,6 +141,7 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Edit the search keywords in the dashboard
 - [x] Choose the contract type in the dashboard (internship or PhD)
 - [x] Clear the job history from the dashboard
+- [x] Letters for every strong match or only the best K
 - [ ] Label jobs and publish scoring results
 - [x] Re-measure runtime and cost
 - [ ] Telegram approval step with a LangGraph checkpointer and `interrupt`

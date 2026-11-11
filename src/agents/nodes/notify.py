@@ -182,23 +182,29 @@ def _seen_record(item: ScoredJob, state: JobRadarState) -> SeenJob:
     }
 
 
-def notify_telegram_node(state: JobRadarState) -> dict:
+# Every channel takes the same digest and reports what it delivered. The settings choose which ones run.
+SENDERS = {"telegram": send_telegram, "gmail": send_gmail}
+
+
+def notify_node(state: JobRadarState) -> dict:
     """
-    Sends the digest, then records the finished jobs.
-    Jobs are recorded as seen only once they're delivered, so failed sends are retried on the next run.
+    Sends the digest on every chosen channel, then records the finished jobs.
+    A job is finished once any channel delivered it; if none did, it's retried on the next run.
     Strong matches that weren't chosen, outside the best K, are left unseen too, so they compete again.
     """
     digest = build_digest(state)
-    result = send_telegram(digest)
+    results = [SENDERS[name](digest) for name in load_settings()["channels"]]
+    delivered = set().union(*(result.delivered for result in results))
 
     # Weak matches need no notification, so they're finished as soon as they've been scored.
     strong_keys = {job_key(item["job"]) for item in strong_matches(state["scored_jobs"])}
     finished = [
         _seen_record(item, state)
         for item in state["scored_jobs"]
-        if job_key(item["job"]) not in strong_keys or job_key(item["job"]) in result.delivered
+        if job_key(item["job"]) not in strong_keys or job_key(item["job"]) in delivered
     ]
     mark_seen(finished)
 
-    everything_arrived = result.summary_sent and len(result.delivered) == len(digest.jobs)
+    # True when at least one channel delivered the whole digest.
+    everything_arrived = any(r.summary_sent and len(r.delivered) == len(digest.jobs) for r in results)
     return {"digest_sent": everything_arrived}

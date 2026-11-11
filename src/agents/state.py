@@ -77,7 +77,7 @@ class JobRadarState(TypedDict):
     cover_letters: dict[str, str]       # job key -> letter; written by draft and revise nodes
     letter_issues: dict[str, list[LetterIssue]]  # job key -> problems; written by verify node
     revision_round: int                 # written by revise_letter_node
-    digest_sent: bool                   # written by notify_telegram_node
+    digest_sent: bool                   # written by notify_node
 
 
 def initial_state() -> JobRadarState:

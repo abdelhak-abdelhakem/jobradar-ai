@@ -5,7 +5,7 @@ from src.db.seen_jobs import seen_keys
 def dedup_node(state: JobRadarState) -> dict:
     """
     Keeps jobs that haven't been finished in an earlier run.
-    Jobs are recorded as seen later, in notify_telegram_node, once they've been handled.
+    Jobs are recorded as seen later, in notify_node, once they've been handled.
     Failed scrapes are dropped here and never recorded, so the next run tries them again.
     """
     seen = seen_keys()

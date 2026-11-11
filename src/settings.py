@@ -13,6 +13,9 @@ from src import config
 # Every job board the pipeline can scrape, in the order they run: name -> label shown to the user.
 SOURCES = {"inria": "Inria", "cnrs": "CNRS", "cea": "CEA"}
 
+# Where the digest is sent: name -> label shown to the user.
+CHANNELS = {"telegram": "Telegram", "gmail": "Gmail"}
+
 # Which strong matches get a letter: every one, or only the best K. Strong matches outside the best K
 # aren't recorded, so the next run scores them again and they compete with the new jobs.
 DELIVERY_MODES = ("all", "top_k")
@@ -24,6 +27,7 @@ SCHEDULE_TIME = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")   # 24-hour HH:MM
 
 DEFAULT_SETTINGS = {
     "sources": list(SOURCES),
+    "channels": ["telegram"],
     "contract_type": config.DEFAULT_CONTRACT,
     "domain_keywords": list(config.DOMAIN_KEYWORDS),
     "delivery": "all",
@@ -53,11 +57,15 @@ def is_schedule_time(value) -> bool:
     return isinstance(value, str) and SCHEDULE_TIME.fullmatch(value) is not None
 
 
-def clean_sources(sources) -> list[str]:
-    """Keeps known source names, without duplicates, in the standard order."""
-    if not isinstance(sources, list):
+def clean_choices(values, known: dict) -> list[str]:
+    """Keeps known names, without duplicates, in the standard order of known."""
+    if not isinstance(values, list):
         return []
-    return [name for name in SOURCES if name in sources]
+    return [name for name in known if name in values]
+
+
+def clean_sources(sources) -> list[str]:
+    return clean_choices(sources, SOURCES)
 
 
 def clean_keywords(keywords) -> list[str]:
@@ -98,6 +106,12 @@ def load_settings(path: str | None = None) -> dict:
     else:
         print(f"[!] No valid source in {path}. Using all sources.")
 
+    channels = clean_choices(saved.get("channels"), CHANNELS)
+    if channels:
+        settings["channels"] = channels
+    elif "channels" in saved:
+        print(f"[!] No valid channel in {path}. Using Telegram.")
+
     # Missing keys are normal in files saved before a setting existed, so only a broken value is reported.
     # Files saved before role keywords came from the contract type may hold role_keywords; it's ignored.
     contract_type = saved.get("contract_type")
@@ -131,6 +145,7 @@ def load_settings(path: str | None = None) -> dict:
 
 def save_settings(
     sources: list[str] | None = None,
+    channels: list[str] | None = None,
     domain_keywords: list[str] | None = None,
     contract_type: str | None = None,
     delivery: str | None = None,
@@ -152,6 +167,11 @@ def save_settings(
         settings["sources"] = clean_sources(sources)
         if not settings["sources"]:
             raise ValueError("Select at least one source.")
+
+    if channels is not None:
+        settings["channels"] = clean_choices(channels, CHANNELS)
+        if not settings["channels"]:
+            raise ValueError("Select at least one channel.")
 
     if contract_type is not None:
         if not is_contract(contract_type):

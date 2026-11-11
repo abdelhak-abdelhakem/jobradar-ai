@@ -16,7 +16,8 @@ from src.config import (
     WRONG_CONTRACT_MAX_SCORE,
 )
 from src.db.seen_jobs import seen_keys
-from src.settings import save_settings
+from src.agents.nodes.notify import SENDERS
+from src.settings import CHANNELS, save_settings
 from scheduler import run_daily
 
 
@@ -370,3 +371,54 @@ def test_a_run_is_skipped_while_another_holds_the_lock(world, run_lock, capsys):
     assert world.calls["score"] == 0
     assert "already in progress" in capsys.readouterr().out
     assert run_daily.main() is True   # the lock is free once the other run ends
+
+
+# Notification channels: a job is finished once any channel delivered it
+
+def test_telegram_is_the_only_channel_by_default(world, smtp):
+    run()
+    assert world.letter in world.sent
+    assert smtp.sent == []
+
+
+def test_gmail_only_sends_one_email_and_no_telegram_message(world, smtp):
+    save_settings(channels=["gmail"])
+    result = run()
+
+    assert world.sent == []
+    [email] = smtp.sent
+    assert world.letter in email.get_content()
+    assert seen_keys() == {"inria:1"}
+    assert result["digest_sent"] is True
+
+
+def test_jobs_are_finished_when_telegram_fails_but_gmail_works(world, smtp):
+    save_settings(channels=["telegram", "gmail"])
+    world.telegram_up = False
+
+    result = run()
+
+    assert seen_keys() == {"inria:1"}   # Gmail delivered it, so it isn't sent again tomorrow
+    assert result["digest_sent"] is True
+
+
+def test_jobs_are_finished_when_gmail_fails_but_telegram_works(world, smtp):
+    save_settings(channels=["telegram", "gmail"])
+    smtp.down = True
+    run()
+    assert seen_keys() == {"inria:1"}
+
+
+def test_jobs_are_retried_when_every_channel_fails(world, smtp):
+    save_settings(channels=["telegram", "gmail"])
+    world.telegram_up = False
+    smtp.down = True
+
+    result = run()
+
+    assert seen_keys() == set()
+    assert result["digest_sent"] is False
+
+
+def test_every_channel_setting_has_a_sender():
+    assert set(SENDERS) == set(CHANNELS)

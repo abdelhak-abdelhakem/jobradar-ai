@@ -610,3 +610,29 @@ def test_load_labels_skips_unlabelled_rows(tmp_path):
     path = tmp_path / "labels.csv"
     path.write_text("key,title,url,score,label\na,t,u,80,1\nb,t,u,40,\n", encoding="utf-8")
     assert load_labels(str(path)) == [{"score": 80, "label": 1}]
+
+
+# Notification channels setting
+
+def test_channels_default_to_telegram():
+    assert load_settings()["channels"] == ["telegram"]
+
+
+@pytest.mark.parametrize("value", ["gmail", [], ["sms"], None])
+def test_invalid_channels_fall_back_to_telegram(settings_file, value):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump({"sources": ["cnrs"], "channels": value}, f)
+    settings = load_settings()
+    assert settings["channels"] == ["telegram"]
+    assert settings["sources"] == ["cnrs"]
+
+
+def test_saved_channels_keep_known_ones_in_order():
+    save_settings(channels=["gmail", "sms", "telegram", "gmail"])
+    assert load_settings()["channels"] == ["telegram", "gmail"]
+
+
+def test_channels_need_at_least_one(settings_file):
+    with pytest.raises(ValueError):
+        save_settings(channels=["sms"])
+    assert not os.path.exists(settings_file)

@@ -1,5 +1,6 @@
 """
-View of the pipeline's saved results, with a sidebar to choose the job sources and search keywords for the next run.
+View of the pipeline's saved results, with a sidebar to choose the contract type, job sources, and search
+keywords for the next run.
 It makes no LLM or Telegram calls.
 
   python -m streamlit run dashboard/app.py
@@ -13,7 +14,8 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from src.config import MATCH_SCORE_THRESHOLD
+from src.agents.nodes.scrape import FILTERED_BY_CONTRACT
+from src.config import CONTRACTS, MATCH_SCORE_THRESHOLD
 from src.db.seen_jobs import all_seen
 from src.settings import SOURCES, load_settings, save_settings
 
@@ -23,6 +25,7 @@ LLM_COLOR = "#d95926"
 NEUTRAL_COLOR = "#8a8984"
 
 DOMAIN_LABELS = {"direct": "Direct", "adjacent": "Adjacent", "none": "None", None: "Not recorded"}
+CONTRACT_LABELS = {**{name: c["label"] for name, c in CONTRACTS.items()}, "other": "Other", None: "Not recorded"}
 
 
 def llm_score(job: dict) -> int:
@@ -86,9 +89,39 @@ def source_label(job: dict) -> str:
     return SOURCES.get(name, name)
 
 
+def skipped_boards_note() -> str:
+    """Names the job boards each contract type skips, such as: PhD searches skip CEA, ..."""
+    notes = []
+    for contract in CONTRACTS.values():
+        skipped = [SOURCES[name] for name in FILTERED_BY_CONTRACT if name not in contract["site_codes"]]
+        if skipped:
+            notes.append(f"{contract['label']} searches skip {', '.join(skipped)}, which has no such offers on its job site.")
+    return " ".join(notes)
+
+
+def contract_settings() -> None:
+    """Sidebar form that chooses the contract type the next run searches for."""
+    current = load_settings()["contract_type"]
+    names = list(CONTRACTS)
+
+    with st.sidebar.form("contract"):
+        st.markdown("**Contract type**")
+        chosen = st.selectbox(
+            "Looking for", names, index=names.index(current), format_func=lambda name: CONTRACTS[name]["label"]
+        )
+        st.caption(f"Changing it resets the role keywords to that type's defaults. {skipped_boards_note()}")
+        saved = st.form_submit_button("Save")
+
+    if saved:
+        save_settings(contract_type=chosen)
+        if chosen == current:
+            st.sidebar.success("Saved.")
+        else:
+            st.sidebar.success(f"Saved. The role keywords were reset to the {CONTRACTS[chosen]['label']} defaults.")
+
+
 def source_settings() -> None:
     """Sidebar form that chooses which job boards the next run scrapes."""
-    st.sidebar.header("Settings")
     current = load_settings()["sources"]
 
     with st.sidebar.form("sources"):
@@ -140,6 +173,7 @@ def results_table(jobs: list[dict]) -> pd.DataFrame:
     return pd.DataFrame([
         {
             "Source": source_label(job),
+            "Contract": CONTRACT_LABELS[job["contract_type"]],
             "Final score": job["score"],
             "LLM score": llm_score(job),
             "Domain fit": DOMAIN_LABELS[job["domain_fit"]],
@@ -153,6 +187,7 @@ def results_table(jobs: list[dict]) -> pd.DataFrame:
 
 def show_job(job: dict) -> None:
     st.subheader(job["title"])
+    st.caption(f"{source_label(job)} · Contract: {CONTRACT_LABELS[job['contract_type']]}")
 
     left, middle, right = st.columns(3)
     left.metric("Final score", f"{job['score']}/100")
@@ -189,6 +224,8 @@ def show_job(job: dict) -> None:
 def main() -> None:
     st.set_page_config(page_title="JobRadar", layout="wide")
     st.title("JobRadar")
+    st.sidebar.header("Settings")
+    contract_settings()
     source_settings()
     keyword_settings()
 

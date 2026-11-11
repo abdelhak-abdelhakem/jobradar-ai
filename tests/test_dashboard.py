@@ -8,7 +8,7 @@ from src.agents.graph import compile_graph
 from src.agents.state import initial_state
 from src.db.seen_jobs import all_seen, mark_seen
 from src.evaluation.evaluate_scoring import export_labels
-from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
+from src.config import DOMAIN_KEYWORDS, PHD_ROLE_KEYWORDS, ROLE_KEYWORDS
 from src.settings import load_settings
 
 from conftest import make_job, make_match
@@ -45,6 +45,13 @@ def job(key="inria:1", title="Internship in NLP", score=78, **extra):
         "issues": [],
         **extra,
     }
+
+
+def click_save(app, form):
+    """Clicks the Save button of one sidebar form: contract, sources, or keywords."""
+    [button] = [button for button in app.sidebar.button if button.form_id == form]
+    button.click().run()
+    assert not app.exception
 
 
 def metrics(app):
@@ -156,9 +163,8 @@ def test_sidebar_saves_the_chosen_sources(db):
     assert all(box.value for box in boxes.values())   # all sources are on by default
 
     boxes["CNRS"].uncheck()
-    app.sidebar.button[0].click().run()
+    click_save(app, "sources")
 
-    assert not app.exception
     assert "Saved" in app.sidebar.success[0].value
     assert load_settings()["sources"] == ["inria", "cea"]
     assert [box.value for box in run_app().sidebar.checkbox] == [True, False, True]
@@ -168,7 +174,7 @@ def test_sidebar_refuses_to_save_no_source(db, settings_file):
     app = run_app()
     for box in app.sidebar.checkbox:
         box.uncheck()
-    app.sidebar.button[0].click().run()
+    click_save(app, "sources")
 
     assert "at least one" in app.sidebar.error[0].value
     assert not os.path.exists(settings_file)
@@ -178,11 +184,6 @@ def test_sidebar_refuses_to_save_no_source(db, settings_file):
 
 def text_areas(app):
     return {area.label: area for area in app.sidebar.text_area}
-
-
-def save_keywords(app):
-    app.sidebar.button[1].click().run()   # button 0 saves the sources, button 1 the keywords
-    assert not app.exception
 
 
 def test_sidebar_shows_the_default_keywords(db):
@@ -195,7 +196,7 @@ def test_sidebar_saves_the_keywords(db):
     app = run_app()
     text_areas(app)["Role keywords"].input("PhD\n  thèse \n\nPhD")
     text_areas(app)["Domain keywords"].input("robotics\nAI")
-    save_keywords(app)
+    click_save(app, "keywords")
 
     assert "Saved" in app.sidebar.success[0].value
     settings = load_settings()
@@ -208,7 +209,7 @@ def test_sidebar_saves_the_keywords(db):
 def test_sidebar_refuses_to_save_empty_keywords(db, settings_file):
     app = run_app()
     text_areas(app)["Domain keywords"].input("  \n")
-    save_keywords(app)
+    click_save(app, "keywords")
 
     assert "at least one domain keyword" in app.sidebar.error[0].value
     assert not os.path.exists(settings_file)
@@ -217,14 +218,51 @@ def test_sidebar_refuses_to_save_empty_keywords(db, settings_file):
 def test_saving_sources_keeps_the_saved_keywords(db):
     app = run_app()
     text_areas(app)["Domain keywords"].input("robotics")
-    save_keywords(app)
+    click_save(app, "keywords")
 
     app = run_app()
     app.sidebar.checkbox[0].uncheck()
-    app.sidebar.button[0].click().run()
+    click_save(app, "sources")
 
     assert load_settings()["sources"] == ["cnrs", "cea"]
     assert load_settings()["domain_keywords"] == ["robotics"]
+
+
+# Contract type in the sidebar
+
+def test_sidebar_contract_type_defaults_to_internship(db):
+    app = run_app()
+    assert app.sidebar.selectbox[0].value == "internship"
+    assert "PhD searches skip CEA" in app.sidebar.caption[0].value
+
+
+def test_choosing_phd_resets_the_role_keywords(db):
+    app = run_app()
+    app.sidebar.selectbox[0].select("phd")
+    click_save(app, "contract")
+
+    assert "reset to the PhD defaults" in app.sidebar.success[0].value
+    assert load_settings()["contract_type"] == "phd"
+    assert text_areas(app)["Role keywords"].value.splitlines() == PHD_ROLE_KEYWORDS
+
+
+def test_saving_the_same_contract_type_keeps_custom_role_keywords(db):
+    app = run_app()
+    text_areas(app)["Role keywords"].input("my own word")
+    click_save(app, "keywords")
+
+    app = run_app()
+    click_save(app, "contract")
+
+    assert app.sidebar.success[0].value == "Saved."
+    assert load_settings()["role_keywords"] == ["my own word"]
+
+
+def test_jobs_show_their_contract_type(db):
+    mark_seen([job("cnrs:1", "A PhD", 78, contract_type="phd"), job("inria:1", "An internship", 60, letter=None)])
+    app = run_app()
+    assert list(app.dataframe[0].value["Contract"]) == ["PhD", "Internship"]
+    assert "Contract: PhD" in app.caption[1].value
 
 
 def test_jobs_table_shows_the_source(db):

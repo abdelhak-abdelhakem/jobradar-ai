@@ -7,13 +7,18 @@ from src.settings import load_settings
 
 def scrape_node(state: JobRadarState) -> dict:
     """Scrapes the job boards selected in the settings. One board failing doesn't stop the others."""
+    settings = load_settings()
+    role_keywords = settings["role_keywords"]
+    domain_keywords = settings["domain_keywords"]
+
     # Built at call time so tests can monkeypatch the scraper functions.
+    # CNRS and CEA filter on the contract type in their search form, so only Inria uses the role keywords.
     scrapers = {
-        "inria": get_inria_jobs,
-        "cnrs": get_cnrs_jobs,
-        "cea": get_cea_jobs,
+        "inria": lambda: get_inria_jobs(role_keywords=role_keywords, domain_keywords=domain_keywords),
+        "cnrs": lambda: get_cnrs_jobs(domain_keywords=domain_keywords),
+        "cea": lambda: get_cea_jobs(domain_keywords=domain_keywords),
     }
-    selected = load_settings()["sources"]
+    selected = settings["sources"]
     print(f"Sources: {', '.join(selected)}")
 
     job_listings = []

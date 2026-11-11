@@ -1,4 +1,5 @@
 import html
+import inspect
 import json
 import os
 from unittest import mock
@@ -207,12 +208,12 @@ def test_cea_scraper_pages_through_results_and_filters_on_position_text(monkeypa
 
 
 def test_one_failing_scraper_does_not_stop_the_others(monkeypatch):
-    def broken():
+    def broken(**keywords):
         raise RuntimeError("site changed")
 
     monkeypatch.setattr(scrape, "get_inria_jobs", broken)
-    monkeypatch.setattr(scrape, "get_cnrs_jobs", lambda: [{"source": "cnrs", "id": "X"}])
-    monkeypatch.setattr(scrape, "get_cea_jobs", lambda: [])
+    monkeypatch.setattr(scrape, "get_cnrs_jobs", lambda **keywords: [{"source": "cnrs", "id": "X"}])
+    monkeypatch.setattr(scrape, "get_cea_jobs", lambda **keywords: [])
 
     assert scrape.scrape_node({})["job_listings"] == [{"source": "cnrs", "id": "X"}]
 
@@ -220,12 +221,43 @@ def test_one_failing_scraper_does_not_stop_the_others(monkeypatch):
 def test_scrape_node_runs_only_the_selected_sources(monkeypatch):
     calls = []
     for name in ("inria", "cnrs", "cea"):
-        monkeypatch.setattr(scrape, f"get_{name}_jobs", lambda name=name: calls.append(name) or [])
+        monkeypatch.setattr(scrape, f"get_{name}_jobs", lambda name=name, **keywords: calls.append(name) or [])
 
     save_settings(["cea", "inria"])
     scrape.scrape_node({})
 
     assert calls == ["inria", "cea"]
+
+
+def test_scrape_node_passes_the_saved_keywords(monkeypatch):
+    real = {name: getattr(scrape, f"get_{name}_jobs") for name in ("inria", "cnrs", "cea")}
+    received = {}
+    for name in real:
+        monkeypatch.setattr(scrape, f"get_{name}_jobs", lambda name=name, **keywords: received.update({name: keywords}) or [])
+
+    save_settings(role_keywords=["PhD"], domain_keywords=["robotics"])
+    scrape.scrape_node({})
+
+    # CNRS and CEA filter on the contract type in their search form, so they only get the domain keywords.
+    assert received == {
+        "inria": {"role_keywords": ["PhD"], "domain_keywords": ["robotics"]},
+        "cnrs": {"domain_keywords": ["robotics"]},
+        "cea": {"domain_keywords": ["robotics"]},
+    }
+    # The fakes accept anything, so check the real scrapers accept these arguments too.
+    for name, keywords in received.items():
+        inspect.signature(real[name]).bind(**keywords)
+
+
+def test_scrape_node_uses_the_config_keywords_by_default(monkeypatch):
+    received = {}
+    monkeypatch.setattr(scrape, "get_inria_jobs", lambda **keywords: received.update(keywords) or [])
+    monkeypatch.setattr(scrape, "get_cnrs_jobs", lambda **keywords: [])
+    monkeypatch.setattr(scrape, "get_cea_jobs", lambda **keywords: [])
+
+    scrape.scrape_node({})
+
+    assert received == {"role_keywords": ROLE_KEYWORDS, "domain_keywords": DOMAIN_KEYWORDS}
 
 
 # Settings

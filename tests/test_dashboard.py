@@ -37,7 +37,7 @@ def job(key="inria:1", title="Internship in NLP", score=78, **extra):
         "score": score,
         "llm_score": score,
         "domain_fit": "adjacent",
-        "is_internship": True,
+        "contract_type": "internship",
         "rationale": "Good fit <with> *special* characters.",
         "matched_skills": ["Python"],
         "missing_skills": ["C++"],
@@ -122,9 +122,23 @@ def test_pipeline_saves_what_the_dashboard_needs(world):
     assert strong["domain_fit"] == "adjacent"
     assert strong["rationale"] == "Good overlap."
     assert strong["matched_skills"] == ["Python"]
+    assert strong["contract_type"] == "internship"
     assert capped["score"] == 60
     assert capped["llm_score"] == 78
     assert capped["letter"] is None
+
+
+@pytest.mark.parametrize("is_internship, expected", [(1, "internship"), (0, "other"), (None, None)])
+def test_rows_saved_before_contract_types_are_read_through_is_internship(db, is_internship, expected):
+    mark_seen([job()])
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE seen_jobs SET contract_type = NULL, is_internship = ?", (is_internship,))
+    conn.commit()
+    conn.close()
+
+    row = all_seen()[0]
+    assert row["contract_type"] == expected
+    assert "is_internship" not in row
 
 
 def test_results_dont_affect_dedup_or_evaluation_export(db, tmp_path):

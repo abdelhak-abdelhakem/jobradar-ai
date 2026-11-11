@@ -2,7 +2,11 @@ from typing import Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.config import MATCH_SCORE_THRESHOLD
+from src.config import CONTRACTS, MATCH_SCORE_THRESHOLD
+
+# The LLM reports the posting's contract type, and code compares it with the one searched for.
+# "other" covers everything else, such as postdoc, engineer, CDI, CDD, or apprenticeship positions.
+ContractType = Literal[tuple([*CONTRACTS, "other"])]
 
 
 class JobMatch(BaseModel):
@@ -10,7 +14,7 @@ class JobMatch(BaseModel):
     rationale: str
     matched_skills: list[str]
     missing_skills: list[str]
-    is_internship: bool = Field(..., description="true only if the posting is an internship (stage)")
+    contract_type: ContractType = Field(..., description="the type of contract the posting offers")
     domain_fit: Literal["direct", "adjacent", "none"] = Field(
         ..., description="how the candidate's experience relates to the posting's main domain"
     )

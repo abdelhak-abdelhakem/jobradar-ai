@@ -17,7 +17,7 @@ def _seen_record(item: ScoredJob, state: JobRadarState) -> SeenJob:
         "company": job.get("company"),
         "llm_score": item["llm_score"],
         "domain_fit": match.domain_fit,
-        "is_internship": match.is_internship,
+        "contract_type": match.contract_type,
         "rationale": match.rationale,
         "matched_skills": match.matched_skills,
         "missing_skills": match.missing_skills,

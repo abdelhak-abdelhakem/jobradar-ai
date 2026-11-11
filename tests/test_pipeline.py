@@ -1,15 +1,20 @@
 """Runs the real graph end to end, with the LLM, Telegram, and the job board faked."""
 from conftest import make_job, make_match
+from langchain_core.prompts import PromptTemplate
+
+from src.agents.nodes import score
 
 from src.agents.graph import compile_graph
 from src.agents.state import initial_state
 from src.config import (
     ADJACENT_DOMAIN_MAX_SCORE,
+    CONTRACTS,
     MAX_LETTER_REVISIONS,
     NO_DOMAIN_FIT_MAX_SCORE,
-    NON_INTERNSHIP_MAX_SCORE,
+    WRONG_CONTRACT_MAX_SCORE,
 )
 from src.db.seen_jobs import seen_keys
+from src.settings import save_settings
 
 
 def run():
@@ -104,11 +109,36 @@ def test_failed_letter_is_retried_next_run(world):
 
 # Scoring
 
-def test_non_internship_cannot_reach_the_threshold(world):
-    world.scores = {"Internship": make_match(95, is_internship=False)}
+def test_other_contract_cannot_reach_the_threshold(world):
+    world.scores = {"Internship": make_match(95, contract_type="other")}
     result = run()
-    assert result["scored_jobs"][0]["job_match"].match_score == NON_INTERNSHIP_MAX_SCORE
+    assert result["scored_jobs"][0]["job_match"].match_score == WRONG_CONTRACT_MAX_SCORE
     assert world.calls["draft"] == 0
+
+
+def test_phd_search_caps_internships_and_keeps_phd_positions(world):
+    save_settings(contract_type="phd")
+    world.jobs = [make_job("1", "Internship in NLP"), make_job("2", "PhD in NLP")]
+    world.scores = {"Internship": make_match(95), "PhD": make_match(95, contract_type="phd")}
+
+    scores = {s["job"]["id"]: s["job_match"].match_score for s in run()["scored_jobs"]}
+
+    assert scores == {"1": WRONG_CONTRACT_MAX_SCORE, "2": 95}
+    assert world.calls["draft"] == 1
+
+
+def test_scoring_prompt_gets_the_contract_type_searched_for(world):
+    save_settings(contract_type="phd")
+    run()
+    inputs = world.score_inputs[0]
+    assert inputs["target"] == CONTRACTS["phd"]["description"]
+    assert "internship for an internship (stage)" in inputs["contract_types"]
+
+
+def test_scoring_prompt_uses_exactly_the_inputs_it_gets(world):
+    # The fake LLM replaces the whole chain, prompt included, so check the real prompt against the inputs.
+    run()
+    assert set(PromptTemplate.from_template(score.TEMPLATE).input_variables) == set(world.score_inputs[0])
 
 
 def test_no_domain_fit_cannot_reach_the_threshold(world):
@@ -131,8 +161,8 @@ def test_direct_domain_score_is_not_capped(world):
 
 
 def test_lower_cap_wins_when_both_apply(world):
-    world.scores = {"Internship": make_match(95, is_internship=False, domain_fit="none")}
-    assert run()["scored_jobs"][0]["job_match"].match_score == NON_INTERNSHIP_MAX_SCORE
+    world.scores = {"Internship": make_match(95, contract_type="other", domain_fit="none")}
+    assert run()["scored_jobs"][0]["job_match"].match_score == WRONG_CONTRACT_MAX_SCORE
 
 
 def test_score_below_the_cap_is_unchanged(world):

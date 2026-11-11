@@ -11,11 +11,13 @@ from src import config
 JSON_COLUMNS = ("matched_skills", "missing_skills", "issues")
 
 # Added after the first version of this table. Older rows have NULL in these columns.
+# is_internship is no longer written: contract_type replaced it, and old rows are read through it.
 RESULT_COLUMNS = {
     "company": "TEXT",
     "llm_score": "INTEGER",
     "domain_fit": "TEXT",
     "is_internship": "INTEGER",
+    "contract_type": "TEXT",
     "rationale": "TEXT",
     "matched_skills": "TEXT",
     "missing_skills": "TEXT",
@@ -32,7 +34,7 @@ class SeenJob(TypedDict):
     company: NotRequired[str | None]
     llm_score: NotRequired[int]
     domain_fit: NotRequired[str]
-    is_internship: NotRequired[bool]
+    contract_type: NotRequired[str]
     rationale: NotRequired[str]
     matched_skills: NotRequired[list[str]]
     missing_skills: NotRequired[list[str]]
@@ -94,5 +96,9 @@ def all_seen(path: str | None = None) -> list[dict]:
         job = dict(row)
         for column in JSON_COLUMNS:
             job[column] = json.loads(job[column]) if job[column] else []
+        # Rows saved before contract types only recorded whether the job was an internship.
+        if job["contract_type"] is None and job["is_internship"] is not None:
+            job["contract_type"] = "internship" if job["is_internship"] else "other"
+        del job["is_internship"]
         jobs.append(job)
     return jobs

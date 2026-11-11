@@ -17,12 +17,12 @@ def make_job(job_id="1", title="Internship in NLP", description="An AI internshi
     }
 
 
-def make_match(score_value=80, is_internship=True, domain_fit="direct") -> JobMatch:
+def make_match(score_value=80, contract_type="internship", domain_fit="direct") -> JobMatch:
     return JobMatch(
         rationale="Good overlap.",
         matched_skills=["Python"],
         missing_skills=[],
-        is_internship=is_internship,
+        contract_type=contract_type,
         domain_fit=domain_fit,
         match_score=score_value,
     )
@@ -46,6 +46,7 @@ class FakeWorld:
         self.jobs = [make_job()]
         self.scores = {}            # text in the job -> score, or an Exception to raise
         self.calls = {"score": 0, "draft": 0, "check": 0, "revise": 0}
+        self.score_inputs = []      # what the scoring prompt received, one dict per job
         self.letter = "Dear team,\n\nA truthful letter.\n\nAbdelhak"
         self.unsupported = {}       # text in the letter -> quotes to flag
         self.off_topic_text = None  # letters containing this text are reported as off topic
@@ -56,6 +57,7 @@ class FakeWorld:
 
     def fake_score(self, inputs):
         self.calls["score"] += 1
+        self.score_inputs.append(inputs)
         for text, value in self.scores.items():
             if text in inputs["job"]:
                 if isinstance(value, Exception):

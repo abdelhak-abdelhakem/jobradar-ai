@@ -1,5 +1,5 @@
 """
-View of the pipeline's saved results, with a sidebar to choose the job sources for the next run.
+View of the pipeline's saved results, with a sidebar to choose the job sources and search keywords for the next run.
 It makes no LLM or Telegram calls.
 
   python -m streamlit run dashboard/app.py
@@ -105,6 +105,37 @@ def source_settings() -> None:
             st.sidebar.success("Saved. The next run uses these sources.")
 
 
+def keyword_settings() -> None:
+    """Sidebar form that edits the keywords a job must match before it reaches the LLM."""
+    current = load_settings()
+
+    with st.sidebar.form("keywords"):
+        st.markdown("**Search keywords**")
+        st.caption(
+            "One keyword per line, matched as whole words. Keywords in capitals, such as AI, "
+            "match only in capitals, so AI doesn't match the French \"j'ai\"."
+        )
+        role_text = st.text_area(
+            "Role keywords",
+            value="\n".join(current["role_keywords"]),
+            help="A job title must contain one of these. Used for Inria; CNRS and CEA filter the contract type on their own site.",
+        )
+        domain_text = st.text_area(
+            "Domain keywords",
+            value="\n".join(current["domain_keywords"]),
+            help="The job title or description must contain one of these.",
+        )
+        saved = st.form_submit_button("Save")
+
+    if saved:
+        try:
+            save_settings(role_keywords=role_text.splitlines(), domain_keywords=domain_text.splitlines())
+        except ValueError as e:
+            st.sidebar.error(str(e))
+        else:
+            st.sidebar.success("Saved. The next run uses these keywords. Jobs already handled aren't scored again.")
+
+
 def results_table(jobs: list[dict]) -> pd.DataFrame:
     return pd.DataFrame([
         {
@@ -159,6 +190,7 @@ def main() -> None:
     st.set_page_config(page_title="JobRadar", layout="wide")
     st.title("JobRadar")
     source_settings()
+    keyword_settings()
 
     jobs = all_seen()
     if not jobs:

@@ -8,6 +8,7 @@ from src.agents.graph import compile_graph
 from src.agents.state import initial_state
 from src.db.seen_jobs import all_seen, mark_seen
 from src.evaluation.evaluate_scoring import export_labels
+from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
 from src.settings import load_settings
 
 from conftest import make_job, make_match
@@ -157,6 +158,59 @@ def test_sidebar_refuses_to_save_no_source(db, settings_file):
 
     assert "at least one" in app.sidebar.error[0].value
     assert not os.path.exists(settings_file)
+
+
+# Keyword settings in the sidebar
+
+def text_areas(app):
+    return {area.label: area for area in app.sidebar.text_area}
+
+
+def save_keywords(app):
+    app.sidebar.button[1].click().run()   # button 0 saves the sources, button 1 the keywords
+    assert not app.exception
+
+
+def test_sidebar_shows_the_default_keywords(db):
+    areas = text_areas(run_app())
+    assert areas["Role keywords"].value.splitlines() == ROLE_KEYWORDS
+    assert areas["Domain keywords"].value.splitlines() == DOMAIN_KEYWORDS
+
+
+def test_sidebar_saves_the_keywords(db):
+    app = run_app()
+    text_areas(app)["Role keywords"].input("PhD\n  thèse \n\nPhD")
+    text_areas(app)["Domain keywords"].input("robotics\nAI")
+    save_keywords(app)
+
+    assert "Saved" in app.sidebar.success[0].value
+    settings = load_settings()
+    assert settings["role_keywords"] == ["PhD", "thèse"]
+    assert settings["domain_keywords"] == ["robotics", "AI"]
+    assert settings["sources"] == ["inria", "cnrs", "cea"]   # saving keywords keeps the sources
+    assert text_areas(run_app())["Domain keywords"].value == "robotics\nAI"
+
+
+def test_sidebar_refuses_to_save_empty_keywords(db, settings_file):
+    app = run_app()
+    text_areas(app)["Domain keywords"].input("  \n")
+    save_keywords(app)
+
+    assert "at least one domain keyword" in app.sidebar.error[0].value
+    assert not os.path.exists(settings_file)
+
+
+def test_saving_sources_keeps_the_saved_keywords(db):
+    app = run_app()
+    text_areas(app)["Domain keywords"].input("robotics")
+    save_keywords(app)
+
+    app = run_app()
+    app.sidebar.checkbox[0].uncheck()
+    app.sidebar.button[0].click().run()
+
+    assert load_settings()["sources"] == ["cnrs", "cea"]
+    assert load_settings()["domain_keywords"] == ["robotics"]
 
 
 def test_jobs_table_shows_the_source(db):

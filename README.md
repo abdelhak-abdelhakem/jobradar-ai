@@ -1,6 +1,6 @@
 # JobRadar AI 🎯
 
-An AI agent built with LangGraph that finds AI internships on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
+An AI agent built with LangGraph that finds AI internships or PhD positions on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram.
 
 Most steps run in a fixed order on purpose, so the agent stays predictable, cheap, and testable. The agentic part is the letter loop: the agent checks its own letter against the CV, and that check decides whether the letter goes back for revision, up to 2 times.
 
@@ -12,7 +12,7 @@ Most steps run in a fixed order on purpose, so the agent stays predictable, chea
 
 ```
 START
-  → scrape_node            # finds internships on the Inria, CNRS, and CEA boards and fetches full pages
+  → scrape_node            # finds offers of the chosen contract type on the Inria, CNRS, and CEA boards and fetches full pages
   → dedup_node             # drops jobs already finished in an earlier run (SQLite)
   → load_profile_node      # loads the whole CV
   → score_job_node         # LLM scores each job → JobMatch (rationale, skills, score)
@@ -31,8 +31,9 @@ START
 
 - **Whole CV instead of RAG:** the first version retrieved up to 6 chunks of 300 characters, under a third of a 6 KB CV. Letters came back signed "Nom du candidat" and scores were based on fragments, so the LLM now gets the whole CV.
 - **Jobs are recorded only once they're handled:** failed scrapes, scores, letters, and Telegram sends are all retried on the next run.
-- **Key requirements are enforced in code:** whatever score the LLM returns, non-internships are capped at 40, jobs with no link to the candidate's experience at 60, and jobs in a new domain that use familiar methods at 79.
+- **Key requirements are enforced in code:** whatever score the LLM returns, jobs with another contract type than the one searched for are capped at 40, jobs with no link to the candidate's experience at 60, and jobs in a new domain that use familiar methods at 79.
 - **Flagged sentences get deleted:** if a rewrite keeps a sentence the checker flagged, code removes it. The last revision round only deletes, so it can't add new claims.
+- **The LLM reports facts, code applies the rules:** the LLM reports each posting's contract type (internship, PhD, or other) and code compares it with the one searched for. The allowed types come from one list in `src/config.py`, so the scoring schema, the settings, and the dashboard can't disagree.
 - **Failures stay contained:** one failed LLM call doesn't stop the batch, and one broken job board doesn't stop the others.
 - **Boilerplate is ignored when filtering:** each board repeats the same "about us" text on every offer, and Inria's mentions AI, so the keyword filter skips it. On CEA the filter also skips the lab description, which often mentions AI even when the internship doesn't.
 
@@ -73,10 +74,11 @@ A page showing every scored job: its source, the LLM's score against the final s
 
 The sidebar sets up the next run:
 
+- **Contract type:** an internship or a PhD position. CNRS and CEA filter on it in their own search forms; CEA publishes its PhD offers on another site, so PhD searches skip it. Changing the contract type resets the role keywords to that type's defaults, such as "stage" and "M2" for internships or "PhD" and "thèse" for PhD positions.
 - **Job sources:** which job boards to scrape.
-- **Search keywords:** the role and domain keywords a job must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai". The role keywords apply to Inria only, because the CNRS and CEA searches already filter on the internship contract.
+- **Search keywords:** the role and domain keywords a job must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai". The role keywords apply to Inria only, because the CNRS and CEA searches already filter on the contract type.
 
-The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: every board, and the keyword lists in `src/config.py`. Changing the keywords doesn't rescore jobs that earlier runs already handled.
+The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the keyword lists in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled.
 
 ```bash
 python -m streamlit run dashboard/app.py
@@ -136,7 +138,7 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Results dashboard
 - [x] Choose the job sources in the dashboard
 - [x] Edit the search keywords in the dashboard
-- [ ] Choose the contract type in the dashboard
+- [x] Choose the contract type in the dashboard (internship or PhD)
 - [ ] Label jobs and publish scoring results
 - [x] Re-measure runtime and cost
 - [ ] Telegram approval step with a LangGraph checkpointer and `interrupt`

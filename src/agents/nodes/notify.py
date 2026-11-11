@@ -10,6 +10,8 @@ from html import escape
 
 from src.agents.state import JobRadarState, LetterIssue, ScoredJob, job_key, strong_matches
 from src.db.seen_jobs import SeenJob, mark_seen
+from src.settings import load_settings
+from src.utils.gmail import send_email
 from src.utils.telegram import send_lines, send_plain
 
 
@@ -72,6 +74,24 @@ def build_digest(state: JobRadarState) -> Digest:
     )
 
 
+def plural(count: int, singular: str, many: str) -> str:
+    return f"{count} {singular if count == 1 else many}"
+
+
+def _summary_sentences(digest: Digest) -> list[str]:
+    """The summary in plain sentences, shared by every channel so the counts always read the same."""
+    sentences = [f"{plural(digest.scored_count, 'new job', 'new jobs')} scored, "
+                 f"{plural(len(digest.jobs), 'strong match', 'strong matches')}."]
+    if not digest.jobs:
+        sentences.append("No matches today.")
+    if digest.retries:
+        sentences.append(f"⚠️ {plural(digest.retries, 'job', 'jobs')} failed and will be tried again on the next run.")
+    if digest.waiting:
+        sentences.append(f"{plural(digest.waiting, 'more strong match', 'more strong matches')} didn't make "
+                         f"the top {digest.chosen} and will be scored again on the next run.")
+    return sentences
+
+
 # How to send it on Telegram: HTML, split into messages under Telegram's length limit
 
 def _link(job: DigestJob) -> str:
@@ -79,15 +99,8 @@ def _link(job: DigestJob) -> str:
 
 
 def _telegram_summary(digest: Digest) -> list[str]:
-    lines = [f"<b>JobRadar digest</b>\n{digest.scored_count} new jobs scored, {len(digest.jobs)} strong matches."]
-    if not digest.jobs:
-        lines.append("No matches today.")
-    if digest.retries:
-        lines.append(f"⚠️ {digest.retries} jobs failed and will be tried again on the next run.")
-    if digest.waiting:
-        jobs = "strong match" if digest.waiting == 1 else "strong matches"
-        lines.append(f"{digest.waiting} more {jobs} didn't make the top {digest.chosen} "
-                     "and will be scored again on the next run.")
+    first, *rest = _summary_sentences(digest)   # numbers only, so nothing needs escaping
+    lines = [f"<b>JobRadar digest</b>\n{first}", *rest]
     for job in digest.jobs:
         lines.append(f"{job.rank}. <b>{job.score}/100</b> {_link(job)}")
     return lines
@@ -113,6 +126,37 @@ def send_telegram(digest: Digest) -> ChannelResult:
         if header_sent and letter_sent:
             result.delivered.add(job.key)
     return result
+
+
+# How to send it by email: one plain-text email with everything, since email has no length limit
+
+def email_subject(digest: Digest) -> str:
+    if not digest.jobs:
+        return "JobRadar: no matches today"
+    return f"JobRadar: {plural(len(digest.jobs), 'strong match', 'strong matches')}"
+
+
+def email_text(digest: Digest) -> str:
+    parts = ["JobRadar digest", "\n".join(_summary_sentences(digest))]
+    if digest.jobs:
+        parts.append("\n".join(f"{job.rank}. {job.score}/100  {job.title}\n   {job.url}" for job in digest.jobs))
+    for job in digest.jobs:
+        section = [f"{'=' * 60}\n#{job.rank} {job.title}", f"Score: {job.score}/100\n{job.url}",
+                   f"Why this score:\n{job.rationale}"]
+        if job.issues:
+            points = "\n".join(f'- "{issue["quote"]}": {issue["reason"]}' if issue["quote"] else f'- {issue["reason"]}'
+                               for issue in job.issues)
+            section.append(f"⚠️ Unverified letter. Check these points before using it:\n{points}")
+        section.append(f"Cover letter draft:\n\n{job.letter}")
+        parts.append("\n\n".join(section))
+    return "\n\n".join(parts) + "\n"
+
+
+def send_gmail(digest: Digest) -> ChannelResult:
+    """Sends the whole digest as one email, so every job arrives, or none does."""
+    if send_email(email_subject(digest), email_text(digest)):
+        return ChannelResult(summary_sent=True, delivered={job.key for job in digest.jobs})
+    return ChannelResult(summary_sent=False)
 
 
 # Recording what's finished

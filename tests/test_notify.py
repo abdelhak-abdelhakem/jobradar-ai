@@ -1,7 +1,9 @@
 """The digest every channel sends. build_digest is pure, so these tests need no fakes."""
+import pytest
+
 from conftest import make_job, make_match
 
-from src.agents.nodes.notify import ChannelResult, Digest, build_digest, send_telegram
+from src.agents.nodes.notify import ChannelResult, Digest, build_digest, plural, send_gmail, send_telegram
 from src.agents.state import initial_state
 
 
@@ -76,3 +78,49 @@ def test_an_empty_digest_still_sends_a_summary(world):
     result = send_telegram(Digest(scored_count=4, retries=0, chosen=0, waiting=0, jobs=[]))
     assert result == ChannelResult(summary_sent=True)
     assert "No matches today." in world.sent[0]
+
+
+# Gmail: one email with everything
+
+def two_job_digest():
+    return build_digest(state_with(
+        [scored("1", "Good", 80), scored("2", "Best", 95)], ["inria:2", "inria:1"],
+        {"inria:2": "Letter for Best", "inria:1": "Letter for Good"},
+        letter_issues={"inria:1": [{"quote": "I know audio.", "reason": "Not in the CV."}]},
+    ))
+
+
+def test_one_email_holds_the_summary_and_every_letter(smtp):
+    result = send_gmail(two_job_digest())
+
+    assert result == ChannelResult(summary_sent=True, delivered={"inria:1", "inria:2"})
+    [email] = smtp.sent
+    assert email["Subject"] == "JobRadar: 2 strong matches"
+    text = email.get_content()
+    assert text.index("Letter for Best") < text.index("Letter for Good")   # best first
+    assert '"I know audio.": Not in the CV.' in text
+    assert "https://jobs.example/2" in text
+
+
+def test_a_failed_email_delivers_no_job(smtp):
+    smtp.down = True
+    assert send_gmail(two_job_digest()) == ChannelResult(summary_sent=False)
+
+
+def test_an_empty_digest_still_sends_an_email(smtp):
+    send_gmail(Digest(scored_count=4, retries=0, chosen=0, waiting=0, jobs=[]))
+    [email] = smtp.sent
+    assert email["Subject"] == "JobRadar: no matches today"
+    assert "No matches today." in email.get_content()
+
+
+def test_letters_are_sent_as_written_not_html_escaped(smtp):
+    digest = build_digest(state_with([scored("1", "R&D <AI>", 80)], ["inria:1"], {"inria:1": "R&D at <Lab> & co"}))
+    send_gmail(digest)
+    text = smtp.sent[0].get_content()
+    assert "R&D at <Lab> & co" in text and "&amp;" not in text
+
+
+@pytest.mark.parametrize("count, expected", [(0, "0 jobs"), (1, "1 job"), (2, "2 jobs")])
+def test_plural(count, expected):
+    assert plural(count, "job", "jobs") == expected

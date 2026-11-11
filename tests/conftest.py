@@ -1,10 +1,12 @@
+import smtplib
+
 import pytest
 from langchain_core.runnables import RunnableLambda
 
 from src import scheduling
 from src.agents.nodes import draft_letter, score
 from src.agents.state import JobMatch, LetterCheck, UnsupportedClaim
-from src.utils import telegram
+from src.utils import gmail, telegram
 
 
 def make_job(job_id="1", title="Internship in NLP", description="An AI internship.") -> dict:
@@ -130,6 +132,43 @@ def systemd(monkeypatch, tmp_path):
     fake = FakeSystemd()
     monkeypatch.setattr(scheduling, "systemctl", fake.systemctl)
     monkeypatch.setattr(scheduling, "UNIT_DIR", str(tmp_path / "systemd-user"))
+    return fake
+
+
+class FakeSMTP:
+    """Stands in for smtplib.SMTP_SSL and records every email. Set down to refuse the login."""
+
+    def __init__(self):
+        self.sent = []
+        self.down = False
+        self.connections = []
+
+    def __call__(self, host, port, timeout):
+        self.connections.append((host, port))
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def login(self, user, password):
+        if self.down:
+            raise smtplib.SMTPAuthenticationError(535, b"Username and Password not accepted for bot@gmail.com")
+        self.logged_in = (user, password)
+
+    def send_message(self, message):
+        self.sent.append(message)
+
+
+@pytest.fixture(autouse=True)
+def smtp(monkeypatch):
+    """Every test gets a fake Gmail server and fake credentials, so no test sends a real email."""
+    fake = FakeSMTP()
+    monkeypatch.setattr(gmail.smtplib, "SMTP_SSL", fake)
+    monkeypatch.setattr(gmail, "GMAIL_ADDRESS", "bot@gmail.com")
+    monkeypatch.setattr(gmail, "GMAIL_APP_PASSWORD", "SECRET-APP-PASSWORD")
     return fake
 
 

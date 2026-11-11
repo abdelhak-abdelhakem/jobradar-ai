@@ -96,7 +96,7 @@ def test_llm_failure_on_one_job_leaves_the_others_scored(world):
 
     assert [s["job"]["id"] for s in result["scored_jobs"]] == ["2"]
     assert seen_keys() == {"inria:2"}
-    assert "1 jobs failed" in all_text(world)
+    assert "1 job failed" in all_text(world)
 
 
 def test_failed_letter_is_retried_next_run(world):

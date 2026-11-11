@@ -1,4 +1,5 @@
 import html
+import json
 import os
 from unittest import mock
 
@@ -10,7 +11,7 @@ from src.config import DOMAIN_KEYWORDS, ROLE_KEYWORDS
 from src.evaluation.evaluate_scoring import load_labels, precision_at_k, spearman
 from src.agents.nodes import scrape
 from src.scrapers import cea_offres, cnrs_offres, inria_offres
-from src.settings import load_settings, save_settings
+from src.settings import clean_keywords, load_settings, save_settings
 from src.scrapers.inria_offres import compile_keywords, matches_any
 from src.utils import telegram
 
@@ -249,6 +250,70 @@ def test_settings_need_at_least_one_source(settings_file):
     with pytest.raises(ValueError):
         save_settings([])
     assert not os.path.exists(settings_file)
+
+
+@pytest.mark.parametrize("keywords, expected", [
+    (["  NLP ", "data engineering"], ["NLP", "data engineering"]),   # stripped, and new keywords are kept
+    (["NLP", "", "   ", 123, None], ["NLP"]),                          # empty and non-text values dropped
+    (["LLM", "AI", "LLM"], ["LLM", "AI"]),                              # duplicates dropped, user's order kept
+    (["AI", "ai"], ["AI", "ai"]),                                       # case matters: "AI" is case-sensitive
+    ("NLP", []),                                                        # not a list
+    (None, []),
+])
+def test_clean_keywords(keywords, expected):
+    assert clean_keywords(keywords) == expected
+
+
+def test_settings_default_to_the_config_keywords_when_the_file_is_missing():
+    settings = load_settings()
+    assert settings["role_keywords"] == ROLE_KEYWORDS
+    assert settings["domain_keywords"] == DOMAIN_KEYWORDS
+
+
+def test_changing_loaded_settings_does_not_change_the_defaults():
+    load_settings()["domain_keywords"].append("changed")
+    assert load_settings()["domain_keywords"] == DOMAIN_KEYWORDS
+
+
+def test_a_file_saved_before_keywords_existed_uses_the_default_keywords(settings_file):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump({"sources": ["cea"]}, f)
+    settings = load_settings()
+    assert settings["sources"] == ["cea"]
+    assert settings["domain_keywords"] == DOMAIN_KEYWORDS
+
+
+@pytest.mark.parametrize("value", ["AI", [], ["", "  "], [1, 2]])
+def test_broken_keywords_fall_back_without_resetting_the_sources(settings_file, value):
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump({"sources": ["cnrs"], "role_keywords": value, "domain_keywords": ["robotics"]}, f)
+    settings = load_settings()
+    assert settings["role_keywords"] == ROLE_KEYWORDS
+    assert settings["domain_keywords"] == ["robotics"]
+    assert settings["sources"] == ["cnrs"]
+
+
+def test_saving_one_setting_keeps_the_others():
+    save_settings(role_keywords=["PhD"], domain_keywords=["robotics"])
+    save_settings(["inria"])
+    assert load_settings() == {"sources": ["inria"], "role_keywords": ["PhD"], "domain_keywords": ["robotics"]}
+
+    save_settings(domain_keywords=["NLP"])
+    assert load_settings() == {"sources": ["inria"], "role_keywords": ["PhD"], "domain_keywords": ["NLP"]}
+
+
+@pytest.mark.parametrize("field", ["role_keywords", "domain_keywords"])
+def test_keywords_cannot_be_saved_empty(settings_file, field):
+    save_settings(domain_keywords=["robotics"])
+    with pytest.raises(ValueError):
+        save_settings(**{field: ["", "   "]})
+    assert load_settings()["domain_keywords"] == ["robotics"]
+
+
+def test_saved_keywords_keep_accents_readable(settings_file):
+    save_settings(role_keywords=["fin d’études"])
+    with open(settings_file, encoding="utf-8") as f:
+        assert "fin d’études" in f.read()
 
 
 # Removing flagged sentences

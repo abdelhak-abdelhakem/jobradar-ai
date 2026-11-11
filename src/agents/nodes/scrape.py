@@ -14,7 +14,7 @@ def scrape_node(state: JobRadarState) -> dict:
     settings = load_settings()
     contract = CONTRACTS[settings["contract_type"]]
     codes = contract["site_codes"]
-    role_keywords = settings["role_keywords"]
+    role_keywords = contract["role_keywords"]   # title words for this contract type, such as "stage" or "thèse"
     domain_keywords = settings["domain_keywords"]
 
     # Built at call time so tests can monkeypatch the scraper functions.

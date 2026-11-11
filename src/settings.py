@@ -1,6 +1,7 @@
 """
 User settings chosen in the dashboard, saved in data/settings.json.
 A missing or broken file falls back to the defaults, so the pipeline always runs.
+Role keywords aren't a setting: they come from the contract type (config.CONTRACTS), so the two can't disagree.
 """
 import copy
 import json
@@ -14,7 +15,6 @@ SOURCES = {"inria": "Inria", "cnrs": "CNRS", "cea": "CEA"}
 DEFAULT_SETTINGS = {
     "sources": list(SOURCES),
     "contract_type": config.DEFAULT_CONTRACT,
-    "role_keywords": list(config.CONTRACTS[config.DEFAULT_CONTRACT]["role_keywords"]),
     "domain_keywords": list(config.DOMAIN_KEYWORDS),
 }
 
@@ -22,11 +22,6 @@ DEFAULT_SETTINGS = {
 def is_contract(value) -> bool:
     """Checks the type first: a list or dict from a broken file can't be looked up in a dict."""
     return isinstance(value, str) and value in config.CONTRACTS
-
-
-def default_role_keywords(contract_type: str) -> list[str]:
-    """Role keywords are contract words, such as "stage" or "thèse", so each contract type has its own."""
-    return list(config.CONTRACTS[contract_type]["role_keywords"])
 
 
 def default_settings() -> dict:
@@ -80,33 +75,30 @@ def load_settings(path: str | None = None) -> dict:
         print(f"[!] No valid source in {path}. Using all sources.")
 
     # Missing keys are normal in files saved before a setting existed, so only a broken value is reported.
+    # Files saved before role keywords came from the contract type may hold role_keywords; it's ignored.
     contract_type = saved.get("contract_type")
     if is_contract(contract_type):
         settings["contract_type"] = contract_type
-        settings["role_keywords"] = default_role_keywords(contract_type)
     elif "contract_type" in saved:
         print(f"[!] Unknown contract type in {path}. Using {config.DEFAULT_CONTRACT}.")
 
-    for name in ("role_keywords", "domain_keywords"):
-        keywords = clean_keywords(saved.get(name))
-        if keywords:
-            settings[name] = keywords
-        elif name in saved:
-            print(f"[!] No valid {name} in {path}. Using the default keywords.")
+    domain_keywords = clean_keywords(saved.get("domain_keywords"))
+    if domain_keywords:
+        settings["domain_keywords"] = domain_keywords
+    elif "domain_keywords" in saved:
+        print(f"[!] No valid domain_keywords in {path}. Using the default keywords.")
 
     return settings
 
 
 def save_settings(
     sources: list[str] | None = None,
-    role_keywords: list[str] | None = None,
     domain_keywords: list[str] | None = None,
     contract_type: str | None = None,
     path: str | None = None,
 ) -> dict:
     """
     Saves the settings that are given and keeps the saved value of the others, then returns them all.
-    A new contract type without role keywords replaces the role keywords with that type's defaults.
     Raises ValueError if a given setting is empty after cleaning, or the contract type is unknown.
     """
     path = path or config.SETTINGS_PATH
@@ -121,14 +113,7 @@ def save_settings(
     if contract_type is not None:
         if not is_contract(contract_type):
             raise ValueError(f"Unknown contract type: {contract_type}.")
-        if contract_type != settings["contract_type"] and role_keywords is None:
-            settings["role_keywords"] = default_role_keywords(contract_type)
         settings["contract_type"] = contract_type
-
-    if role_keywords is not None:
-        settings["role_keywords"] = clean_keywords(role_keywords)
-        if not settings["role_keywords"]:
-            raise ValueError("Enter at least one role keyword.")
 
     if domain_keywords is not None:
         settings["domain_keywords"] = clean_keywords(domain_keywords)

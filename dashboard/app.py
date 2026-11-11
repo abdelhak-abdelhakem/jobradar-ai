@@ -109,15 +109,12 @@ def contract_settings() -> None:
         chosen = st.selectbox(
             "Looking for", names, index=names.index(current), format_func=lambda name: CONTRACTS[name]["label"]
         )
-        st.caption(f"Changing it resets the role keywords to that type's defaults. {skipped_boards_note()}")
+        st.caption(skipped_boards_note())
         saved = st.form_submit_button("Save")
 
     if saved:
         save_settings(contract_type=chosen)
-        if chosen == current:
-            st.sidebar.success("Saved.")
-        else:
-            st.sidebar.success(f"Saved. The role keywords were reset to the {CONTRACTS[chosen]['label']} defaults.")
+        st.sidebar.success(f"Saved. The next run looks for {CONTRACTS[chosen]['label']} offers.")
 
 
 def source_settings() -> None:
@@ -139,7 +136,7 @@ def source_settings() -> None:
 
 
 def keyword_settings() -> None:
-    """Sidebar form that edits the keywords a job must match before it reaches the LLM."""
+    """Sidebar form that edits the domain keywords a job must match before it reaches the LLM."""
     current = load_settings()
 
     with st.sidebar.form("keywords"):
@@ -147,11 +144,6 @@ def keyword_settings() -> None:
         st.caption(
             "One keyword per line, matched as whole words. Keywords in capitals, such as AI, "
             "match only in capitals, so AI doesn't match the French \"j'ai\"."
-        )
-        role_text = st.text_area(
-            "Role keywords",
-            value="\n".join(current["role_keywords"]),
-            help="A job title must contain one of these. Used for Inria; CNRS and CEA filter the contract type on their own site.",
         )
         domain_text = st.text_area(
             "Domain keywords",
@@ -162,7 +154,7 @@ def keyword_settings() -> None:
 
     if saved:
         try:
-            save_settings(role_keywords=role_text.splitlines(), domain_keywords=domain_text.splitlines())
+            save_settings(domain_keywords=domain_text.splitlines())
         except ValueError as e:
             st.sidebar.error(str(e))
         else:

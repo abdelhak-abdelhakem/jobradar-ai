@@ -8,7 +8,7 @@ from src.agents.graph import compile_graph
 from src.agents.state import initial_state
 from src.db.seen_jobs import all_seen, backup_path, clear_seen, mark_seen, seen_keys
 from src.evaluation.evaluate_scoring import export_labels
-from src.config import DOMAIN_KEYWORDS, PHD_ROLE_KEYWORDS, ROLE_KEYWORDS
+from src.config import DOMAIN_KEYWORDS
 from src.settings import load_settings
 
 from conftest import make_job, make_match
@@ -190,21 +190,19 @@ def text_areas(app):
     return {area.label: area for area in app.sidebar.text_area}
 
 
-def test_sidebar_shows_the_default_keywords(db):
+def test_sidebar_shows_only_the_domain_keywords(db):
     areas = text_areas(run_app())
-    assert areas["Role keywords"].value.splitlines() == ROLE_KEYWORDS
+    assert list(areas) == ["Domain keywords"]   # role keywords come from the contract type
     assert areas["Domain keywords"].value.splitlines() == DOMAIN_KEYWORDS
 
 
 def test_sidebar_saves_the_keywords(db):
     app = run_app()
-    text_areas(app)["Role keywords"].input("PhD\n  thèse \n\nPhD")
-    text_areas(app)["Domain keywords"].input("robotics\nAI")
+    text_areas(app)["Domain keywords"].input("robotics\n  AI \n\nrobotics")
     click_save(app, "keywords")
 
     assert "Saved" in app.sidebar.success[0].value
     settings = load_settings()
-    assert settings["role_keywords"] == ["PhD", "thèse"]
     assert settings["domain_keywords"] == ["robotics", "AI"]
     assert settings["sources"] == ["inria", "cnrs", "cea"]   # saving keywords keeps the sources
     assert text_areas(run_app())["Domain keywords"].value == "robotics\nAI"
@@ -240,26 +238,17 @@ def test_sidebar_contract_type_defaults_to_internship(db):
     assert "PhD searches skip CEA" in app.sidebar.caption[0].value
 
 
-def test_choosing_phd_resets_the_role_keywords(db):
+def test_choosing_phd_keeps_the_domain_keywords(db):
+    app = run_app()
+    text_areas(app)["Domain keywords"].input("robotics")
+    click_save(app, "keywords")
+
     app = run_app()
     app.sidebar.selectbox[0].select("phd")
     click_save(app, "contract")
 
-    assert "reset to the PhD defaults" in app.sidebar.success[0].value
-    assert load_settings()["contract_type"] == "phd"
-    assert text_areas(app)["Role keywords"].value.splitlines() == PHD_ROLE_KEYWORDS
-
-
-def test_saving_the_same_contract_type_keeps_custom_role_keywords(db):
-    app = run_app()
-    text_areas(app)["Role keywords"].input("my own word")
-    click_save(app, "keywords")
-
-    app = run_app()
-    click_save(app, "contract")
-
-    assert app.sidebar.success[0].value == "Saved."
-    assert load_settings()["role_keywords"] == ["my own word"]
+    assert "looks for PhD offers" in app.sidebar.success[0].value
+    assert load_settings() == {"sources": ["inria", "cnrs", "cea"], "contract_type": "phd", "domain_keywords": ["robotics"]}
 
 
 def test_jobs_show_their_contract_type(db):

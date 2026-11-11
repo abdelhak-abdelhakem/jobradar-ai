@@ -249,18 +249,18 @@ def test_scrape_node_runs_only_the_selected_sources(monkeypatch):
     assert calls == ["inria", "cea"]
 
 
-def test_scrape_node_passes_the_saved_keywords(monkeypatch):
+def test_scrape_node_passes_the_saved_keywords_and_the_contracts_role_keywords(monkeypatch):
     real = {name: getattr(scrape, f"get_{name}_jobs") for name in ("inria", "cnrs", "cea")}
     received = {}
     for name in real:
         monkeypatch.setattr(scrape, f"get_{name}_jobs", lambda name=name, **keywords: received.update({name: keywords}) or [])
 
-    save_settings(role_keywords=["PhD"], domain_keywords=["robotics"])
+    save_settings(domain_keywords=["robotics"])
     scrape.scrape_node({})
 
     # CNRS and CEA filter on the contract type in their search form, so they only get the domain keywords.
     assert received == {
-        "inria": {"role_keywords": ["PhD"], "domain_keywords": ["robotics"]},
+        "inria": {"role_keywords": ROLE_KEYWORDS, "domain_keywords": ["robotics"]},
         "cnrs": {"domain_keywords": ["robotics"], "contract_code": "STAG"},
         "cea": {"domain_keywords": ["robotics"], "contract_code": 579},
     }
@@ -332,10 +332,8 @@ def test_clean_keywords(keywords, expected):
     assert clean_keywords(keywords) == expected
 
 
-def test_settings_default_to_the_config_keywords_when_the_file_is_missing():
-    settings = load_settings()
-    assert settings["role_keywords"] == ROLE_KEYWORDS
-    assert settings["domain_keywords"] == DOMAIN_KEYWORDS
+def test_settings_default_to_the_config_domain_keywords_when_the_file_is_missing():
+    assert load_settings()["domain_keywords"] == DOMAIN_KEYWORDS
 
 
 def test_changing_loaded_settings_does_not_change_the_defaults():
@@ -354,50 +352,61 @@ def test_a_file_saved_before_keywords_existed_uses_the_default_keywords(settings
 @pytest.mark.parametrize("value", ["AI", [], ["", "  "], [1, 2]])
 def test_broken_keywords_fall_back_without_resetting_the_sources(settings_file, value):
     with open(settings_file, "w", encoding="utf-8") as f:
-        json.dump({"sources": ["cnrs"], "role_keywords": value, "domain_keywords": ["robotics"]}, f)
+        json.dump({"sources": ["cnrs"], "contract_type": "phd", "domain_keywords": value}, f)
     settings = load_settings()
-    assert settings["role_keywords"] == ROLE_KEYWORDS
-    assert settings["domain_keywords"] == ["robotics"]
+    assert settings["domain_keywords"] == DOMAIN_KEYWORDS
+    assert settings["contract_type"] == "phd"
     assert settings["sources"] == ["cnrs"]
 
 
 def test_saving_one_setting_keeps_the_others():
-    save_settings(role_keywords=["PhD"], domain_keywords=["robotics"])
+    save_settings(contract_type="phd", domain_keywords=["robotics"])
     save_settings(["inria"])
-    assert load_settings() == {
-        "sources": ["inria"], "contract_type": "internship", "role_keywords": ["PhD"], "domain_keywords": ["robotics"],
-    }
+    assert load_settings() == {"sources": ["inria"], "contract_type": "phd", "domain_keywords": ["robotics"]}
 
     save_settings(domain_keywords=["NLP"])
-    assert load_settings() == {
-        "sources": ["inria"], "contract_type": "internship", "role_keywords": ["PhD"], "domain_keywords": ["NLP"],
-    }
+    assert load_settings() == {"sources": ["inria"], "contract_type": "phd", "domain_keywords": ["NLP"]}
 
 
-@pytest.mark.parametrize("field", ["role_keywords", "domain_keywords"])
-def test_keywords_cannot_be_saved_empty(settings_file, field):
+def test_keywords_cannot_be_saved_empty(settings_file):
     save_settings(domain_keywords=["robotics"])
     with pytest.raises(ValueError):
-        save_settings(**{field: ["", "   "]})
+        save_settings(domain_keywords=["", "   "])
     assert load_settings()["domain_keywords"] == ["robotics"]
 
 
 def test_saved_keywords_keep_accents_readable(settings_file):
-    save_settings(role_keywords=["fin d’études"])
+    save_settings(domain_keywords=["apprentissage profond", "vision par ordinateur", "réseau de neurones"])
     with open(settings_file, encoding="utf-8") as f:
-        assert "fin d’études" in f.read()
+        assert "réseau de neurones" in f.read()
 
 
 def test_contract_type_defaults_to_internship():
-    settings = load_settings()
-    assert settings["contract_type"] == "internship"
-    assert settings["role_keywords"] == ROLE_KEYWORDS
+    assert load_settings()["contract_type"] == "internship"
 
 
-def test_a_saved_contract_type_brings_its_own_default_role_keywords(settings_file):
+def test_role_keywords_are_not_a_setting(settings_file):
+    # Files saved before role keywords came from the contract type may still hold them.
     with open(settings_file, "w", encoding="utf-8") as f:
-        json.dump({"contract_type": "phd"}, f)
-    assert load_settings()["role_keywords"] == PHD_ROLE_KEYWORDS
+        json.dump({"contract_type": "internship", "role_keywords": ["PhD"]}, f)
+    assert "role_keywords" not in load_settings()
+
+    save_settings(["cnrs"])
+    with open(settings_file, encoding="utf-8") as f:
+        assert "role_keywords" not in json.load(f)   # dropped from the file on the next save
+
+
+def test_each_contract_type_has_its_own_role_keywords(monkeypatch):
+    # The conflict this design prevents: looking for an internship while Inria filters on PhD titles.
+    received = {}
+    monkeypatch.setattr(scrape, "get_inria_jobs", lambda **keywords: received.update(keywords) or [])
+    monkeypatch.setattr(scrape, "get_cnrs_jobs", lambda **keywords: [])
+    monkeypatch.setattr(scrape, "get_cea_jobs", lambda **keywords: [])
+
+    for contract_type, expected in [("internship", ROLE_KEYWORDS), ("phd", PHD_ROLE_KEYWORDS)]:
+        save_settings(contract_type=contract_type)
+        scrape.scrape_node({})
+        assert received["role_keywords"] == expected
 
 
 @pytest.mark.parametrize("value", ["cdi", ["phd"], 5, None])
@@ -407,25 +416,6 @@ def test_unknown_contract_type_falls_back_to_internship(settings_file, value):
     settings = load_settings()
     assert settings["contract_type"] == "internship"
     assert settings["sources"] == ["cnrs"]
-
-
-def test_changing_the_contract_type_resets_the_role_keywords():
-    save_settings(role_keywords=["my own word"])
-    save_settings(contract_type="phd")
-    assert load_settings()["role_keywords"] == PHD_ROLE_KEYWORDS
-
-
-def test_keeping_the_contract_type_keeps_custom_role_keywords():
-    save_settings(role_keywords=["my own word"])
-    save_settings(contract_type="internship")
-    assert load_settings()["role_keywords"] == ["my own word"]
-
-
-def test_contract_type_and_role_keywords_saved_together_are_both_kept():
-    save_settings(contract_type="phd", role_keywords=["thèse"])
-    settings = load_settings()
-    assert settings["contract_type"] == "phd"
-    assert settings["role_keywords"] == ["thèse"]
 
 
 @pytest.mark.parametrize("value", ["cdi", ["phd"]])

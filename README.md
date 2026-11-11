@@ -74,11 +74,11 @@ A page showing every scored job: its source, the LLM's score against the final s
 
 The sidebar sets up the next run:
 
-- **Contract type:** an internship or a PhD position. CNRS and CEA filter on it in their own search forms; CEA publishes its PhD offers on another site, so PhD searches skip it. Changing the contract type resets the role keywords to that type's defaults, such as "stage" and "M2" for internships or "PhD" and "thèse" for PhD positions.
+- **Contract type:** an internship or a PhD position. CNRS and CEA filter on it in their own search forms; CEA publishes its PhD offers on another site, so PhD searches skip it. Inria has no such filter, so a job title there must contain one of the contract type's role keywords, such as "stage" or "M2" for internships and "PhD" or "thèse" for PhD positions. These come from the contract type in `src/config.py` and aren't a separate setting, so they can never disagree with it.
 - **Job sources:** which job boards to scrape.
-- **Search keywords:** the role and domain keywords a job must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai". The role keywords apply to Inria only, because the CNRS and CEA searches already filter on the contract type.
+- **Search keywords:** the domain keywords a job's title or description must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai".
 
-The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the keyword lists in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled. To apply new settings to them, **Clear history** in the sidebar deletes the saved jobs, so the next run scores every listed job again and drafts new letters, which costs OpenAI credit. It asks for confirmation and first copies the database to `data/seen_jobs.backup.sqlite3`; to undo, copy that file back to `data/seen_jobs.sqlite3`.
+The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the domain keywords in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled. To apply new settings to them, **Clear history** in the sidebar deletes the saved jobs, so the next run scores every listed job again and drafts new letters, which costs OpenAI credit. It asks for confirmation and first copies the database to `data/seen_jobs.backup.sqlite3`; to undo, copy that file back to `data/seen_jobs.sqlite3`.
 
 ```bash
 python -m streamlit run dashboard/app.py

@@ -71,7 +71,12 @@ The first run scores every matching job. Later runs only process new ones. A run
 
 A page showing every scored job: its source, the LLM's score against the final score, the rationale, skills, and letter draft. It uses saved results, so it makes no API calls.
 
-The sidebar chooses which job boards the next run scrapes. The choice is saved in `data/settings.json`, and if that file is missing, every board is used.
+The sidebar sets up the next run:
+
+- **Job sources:** which job boards to scrape.
+- **Search keywords:** the role and domain keywords a job must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai". The role keywords apply to Inria only, because the CNRS and CEA searches already filter on the internship contract.
+
+The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: every board, and the keyword lists in `src/config.py`. Changing the keywords doesn't rescore jobs that earlier runs already handled.
 
 ```bash
 python -m streamlit run dashboard/app.py
@@ -130,6 +135,8 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Tests and CI
 - [x] Results dashboard
 - [x] Choose the job sources in the dashboard
+- [x] Edit the search keywords in the dashboard
+- [ ] Choose the contract type in the dashboard
 - [ ] Label jobs and publish scoring results
 - [x] Re-measure runtime and cost
 - [ ] Telegram approval step with a LangGraph checkpointer and `interrupt`

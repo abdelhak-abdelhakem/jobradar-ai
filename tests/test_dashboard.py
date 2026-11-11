@@ -11,7 +11,7 @@ from src.agents.state import initial_state
 from src.db.seen_jobs import all_seen, backup_path, clear_seen, mark_seen, seen_keys
 from src.evaluation.evaluate_scoring import export_labels
 from src.config import DOMAIN_KEYWORDS
-from src.settings import load_settings
+from src.settings import load_settings, save_settings
 
 from conftest import make_job, make_match
 
@@ -333,6 +333,46 @@ def test_a_systemd_failure_saves_nothing(db, systemd, settings_file):
 
     assert "systemctl failed" in app.sidebar.error[0].value
     assert not os.path.exists(settings_file)
+
+
+# Notification channels in the sidebar
+
+def channel_boxes(app):
+    return {box.label: box for box in app.sidebar.checkbox if box.form_id == "channels"}
+
+
+def test_telegram_is_the_default_channel(db):
+    boxes = channel_boxes(run_app())
+    assert {label: box.value for label, box in boxes.items()} == {"Telegram": True, "Gmail": False}
+
+
+def test_sidebar_saves_both_channels(db):
+    app = run_app()
+    channel_boxes(app)["Gmail"].check()
+    click_save(app, "channels")
+
+    assert "Telegram and Gmail" in app.sidebar.success[0].value
+    assert load_settings()["channels"] == ["telegram", "gmail"]
+
+
+def test_sidebar_refuses_no_channel(db, settings_file):
+    app = run_app()
+    channel_boxes(app)["Telegram"].uncheck()
+    click_save(app, "channels")
+
+    assert "at least one channel" in app.sidebar.error[0].value
+    assert not os.path.exists(settings_file)
+
+
+def test_sidebar_warns_when_a_chosen_channel_has_no_credentials(db, monkeypatch):
+    # Set every credential here, so the result doesn't depend on the .env of the computer running the test.
+    monkeypatch.setattr("src.config.TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr("src.config.TELEGRAM_CHAT_ID", "42")
+    monkeypatch.setattr("src.config.GMAIL_ADDRESS", "bot@gmail.com")
+    monkeypatch.setattr("src.config.GMAIL_APP_PASSWORD", None)
+    save_settings(channels=["telegram", "gmail"])
+    app = run_app()
+    assert any("No credentials in .env for: Gmail" in warning.value for warning in app.sidebar.warning)
 
 
 # Clearing the history

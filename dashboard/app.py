@@ -15,11 +15,12 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from src import config
 from src.agents.nodes.scrape import FILTERED_BY_CONTRACT
 from src.config import CONTRACTS, MATCH_SCORE_THRESHOLD, MAX_TOP_K
 from src.db.seen_jobs import all_seen, backup_path, clear_seen
 from src.scheduling import ScheduleError, apply_schedule, next_run
-from src.settings import SCHEDULES, SOURCES, WEEKDAYS, load_settings, save_settings
+from src.settings import CHANNELS, SCHEDULES, SOURCES, WEEKDAYS, load_settings, save_settings
 
 # Passes colour-blindness and contrast checks on both Streamlit's light and dark backgrounds.
 FINAL_COLOR = "#2a78d6"
@@ -161,6 +162,38 @@ def keyword_settings() -> None:
             st.sidebar.error(str(e))
         else:
             st.sidebar.success("Saved. The next run uses these keywords. Jobs already handled aren't scored again.")
+
+
+def missing_credentials() -> list[str]:
+    """Channels whose credentials aren't in .env, so they would send nothing."""
+    needed = {
+        "telegram": (config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_CHAT_ID),
+        "gmail": (config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD),
+    }
+    return [CHANNELS[name] for name, values in needed.items() if not all(values)]
+
+
+def channel_settings() -> None:
+    """Sidebar form that chooses where the digest is sent."""
+    current = load_settings()["channels"]
+
+    with st.sidebar.form("channels"):
+        st.markdown("**Notifications**")
+        chosen = [name for name, label in CHANNELS.items() if st.checkbox(label, value=name in current)]
+        st.caption("A job counts as sent once any chosen channel delivers it. Gmail sends one email per run, "
+                   "to the address in .env.")
+        missing = [label for label in missing_credentials() if label in (CHANNELS[name] for name in current)]
+        if missing:
+            st.warning(f"No credentials in .env for: {', '.join(missing)}. Nothing will be sent there.")
+        saved = st.form_submit_button("Save")
+
+    if saved:
+        try:
+            save_settings(channels=chosen)
+        except ValueError as e:
+            st.sidebar.error(str(e))
+        else:
+            st.sidebar.success(f"Saved. The next run sends to {' and '.join(CHANNELS[name] for name in chosen)}.")
 
 
 DELIVERY_LABELS = {"all": "Every strong match", "top_k": "Only the best K"}
@@ -314,6 +347,7 @@ def main() -> None:
     source_settings()
     keyword_settings()
     delivery_settings()
+    channel_settings()
     schedule_settings()
     history_settings()
 

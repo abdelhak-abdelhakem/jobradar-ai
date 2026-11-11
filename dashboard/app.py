@@ -16,7 +16,7 @@ import streamlit as st
 
 from src.agents.nodes.scrape import FILTERED_BY_CONTRACT
 from src.config import CONTRACTS, MATCH_SCORE_THRESHOLD
-from src.db.seen_jobs import all_seen
+from src.db.seen_jobs import all_seen, backup_path, clear_seen
 from src.settings import SOURCES, load_settings, save_settings
 
 # Passes colour-blindness and contrast checks on both Streamlit's light and dark backgrounds.
@@ -169,6 +169,28 @@ def keyword_settings() -> None:
             st.sidebar.success("Saved. The next run uses these keywords. Jobs already handled aren't scored again.")
 
 
+def history_settings() -> None:
+    """Sidebar form that clears the finished jobs, so the next run scores them again with the new settings."""
+    count = len(all_seen())
+
+    with st.sidebar.form("history"):
+        st.markdown("**History**")
+        st.caption(
+            f"{count} jobs are saved. Runs skip them, so new settings only apply to new jobs. "
+            "Clearing the history removes these results, and the next run scores every listed job again "
+            "and drafts new letters, which costs OpenAI credit."
+        )
+        confirmed = st.checkbox("I understand the next run costs more")
+        cleared = st.form_submit_button("Clear history", disabled=count == 0)
+
+    if cleared:
+        if not confirmed:
+            st.sidebar.error("Tick the box to confirm first.")
+        else:
+            deleted = clear_seen()
+            st.sidebar.success(f"Cleared {deleted} jobs. A backup was saved to `{os.path.basename(backup_path())}`.")
+
+
 def results_table(jobs: list[dict]) -> pd.DataFrame:
     return pd.DataFrame([
         {
@@ -228,6 +250,7 @@ def main() -> None:
     contract_settings()
     source_settings()
     keyword_settings()
+    history_settings()
 
     jobs = all_seen()
     if not jobs:
@@ -240,7 +263,7 @@ def main() -> None:
     if any(job["rationale"] is None for job in jobs):
         st.warning(
             "Some jobs were saved by an older version, so their details are missing. "
-            "To fill them in, delete `data/seen_jobs.sqlite3` and run the pipeline again."
+            "To fill them in, clear the history in the sidebar and run the pipeline again."
         )
 
     jobs_scored, strong, capped, to_check = st.columns(4)

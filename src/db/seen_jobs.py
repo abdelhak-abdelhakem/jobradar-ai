@@ -102,3 +102,23 @@ def all_seen(path: str | None = None) -> list[dict]:
         del job["is_internship"]
         jobs.append(job)
     return jobs
+
+
+def backup_path(path: str | None = None) -> str:
+    path = path or config.SEEN_JOBS_DB
+    return path.removesuffix(".sqlite3") + ".backup.sqlite3"
+
+
+def clear_seen(path: str | None = None) -> int:
+    """
+    Deletes every finished job, so the next run scores them all again. Returns how many were deleted.
+    The database is copied to backup_path() first, replacing the previous backup, so a mistake can be undone.
+    An empty history is left alone, so it never replaces a useful backup with an empty one.
+    """
+    with closing(_connect(path)) as conn:
+        if conn.execute("SELECT COUNT(*) FROM seen_jobs").fetchone()[0] == 0:
+            return 0
+        with closing(sqlite3.connect(backup_path(path))) as backup:
+            conn.backup(backup)
+        with conn:
+            return conn.execute("DELETE FROM seen_jobs").rowcount

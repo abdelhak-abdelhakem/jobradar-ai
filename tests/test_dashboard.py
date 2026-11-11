@@ -6,7 +6,7 @@ from streamlit.testing.v1 import AppTest
 
 from src.agents.graph import compile_graph
 from src.agents.state import initial_state
-from src.db.seen_jobs import all_seen, mark_seen
+from src.db.seen_jobs import all_seen, backup_path, clear_seen, mark_seen, seen_keys
 from src.evaluation.evaluate_scoring import export_labels
 from src.config import DOMAIN_KEYWORDS, PHD_ROLE_KEYWORDS, ROLE_KEYWORDS
 from src.settings import load_settings
@@ -52,6 +52,10 @@ def click_save(app, form):
     [button] = [button for button in app.sidebar.button if button.form_id == form]
     button.click().run()
     assert not app.exception
+
+
+def source_boxes(app):
+    return [box for box in app.sidebar.checkbox if box.form_id == "sources"]
 
 
 def metrics(app):
@@ -159,7 +163,7 @@ def test_results_dont_affect_dedup_or_evaluation_export(db, tmp_path):
 
 def test_sidebar_saves_the_chosen_sources(db):
     app = run_app()
-    boxes = {box.label: box for box in app.sidebar.checkbox}
+    boxes = {box.label: box for box in source_boxes(app)}
     assert all(box.value for box in boxes.values())   # all sources are on by default
 
     boxes["CNRS"].uncheck()
@@ -167,12 +171,12 @@ def test_sidebar_saves_the_chosen_sources(db):
 
     assert "Saved" in app.sidebar.success[0].value
     assert load_settings()["sources"] == ["inria", "cea"]
-    assert [box.value for box in run_app().sidebar.checkbox] == [True, False, True]
+    assert [box.value for box in source_boxes(run_app())] == [True, False, True]
 
 
 def test_sidebar_refuses_to_save_no_source(db, settings_file):
     app = run_app()
-    for box in app.sidebar.checkbox:
+    for box in source_boxes(app):
         box.uncheck()
     click_save(app, "sources")
 
@@ -221,7 +225,7 @@ def test_saving_sources_keeps_the_saved_keywords(db):
     click_save(app, "keywords")
 
     app = run_app()
-    app.sidebar.checkbox[0].uncheck()
+    source_boxes(app)[0].uncheck()
     click_save(app, "sources")
 
     assert load_settings()["sources"] == ["cnrs", "cea"]
@@ -263,6 +267,51 @@ def test_jobs_show_their_contract_type(db):
     app = run_app()
     assert list(app.dataframe[0].value["Contract"]) == ["PhD", "Internship"]
     assert "Contract: PhD" in app.caption[1].value
+
+
+# Clearing the history
+
+def history_form(app):
+    [box] = [box for box in app.sidebar.checkbox if box.form_id == "history"]
+    [button] = [button for button in app.sidebar.button if button.form_id == "history"]
+    return box, button
+
+
+def test_clearing_needs_the_confirmation_box(db):
+    mark_seen([job()])
+    app = run_app()
+    _, button = history_form(app)
+    button.click().run()
+
+    assert "confirm" in app.sidebar.error[0].value
+    assert len(all_seen()) == 1
+
+
+def test_clearing_deletes_the_history_and_keeps_a_backup(db):
+    mark_seen([job("inria:1"), job("inria:2")])
+    app = run_app()
+    box, button = history_form(app)
+    box.check()
+    button.click().run()
+
+    assert not app.exception
+    assert "Cleared 2 jobs" in app.sidebar.success[0].value
+    assert all_seen() == []
+    assert "No results yet" in app.info[0].value
+    assert len(all_seen(backup_path(db))) == 2
+    assert seen_keys() == set()   # the next run scores these jobs again
+
+
+def test_clearing_an_empty_history_keeps_the_previous_backup(db):
+    mark_seen([job()])
+    assert clear_seen() == 1
+    assert clear_seen() == 0
+    assert len(all_seen(backup_path(db))) == 1
+
+
+def test_clear_button_is_off_when_there_is_no_history(db):
+    _, button = history_form(run_app())
+    assert button.disabled
 
 
 def test_jobs_table_shows_the_source(db):

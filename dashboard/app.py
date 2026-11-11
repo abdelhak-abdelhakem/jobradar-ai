@@ -5,6 +5,7 @@ It makes no LLM or Telegram calls.
 
   python -m streamlit run dashboard/app.py
 """
+import datetime
 import os
 import sys
 
@@ -17,7 +18,8 @@ import streamlit as st
 from src.agents.nodes.scrape import FILTERED_BY_CONTRACT
 from src.config import CONTRACTS, MATCH_SCORE_THRESHOLD, MAX_TOP_K
 from src.db.seen_jobs import all_seen, backup_path, clear_seen
-from src.settings import SOURCES, load_settings, save_settings
+from src.scheduling import ScheduleError, apply_schedule, next_run
+from src.settings import SCHEDULES, SOURCES, WEEKDAYS, load_settings, save_settings
 
 # Passes colour-blindness and contrast checks on both Streamlit's light and dark backgrounds.
 FINAL_COLOR = "#2a78d6"
@@ -192,6 +194,44 @@ def delivery_settings() -> None:
             st.sidebar.success("Saved. The next run writes a letter for every strong match.")
 
 
+SCHEDULE_LABELS = {"off": "Off, I run it by hand", "daily": "Every day", "weekly": "Every week"}
+
+
+def schedule_settings() -> None:
+    """Sidebar form that installs or removes the systemd timer that runs the pipeline."""
+    current = load_settings()
+    hour, minute = map(int, current["schedule_time"].split(":"))
+
+    with st.sidebar.form("schedule"):
+        st.markdown("**Schedule**")
+        schedule = st.radio(
+            "Run the pipeline",
+            SCHEDULES,
+            index=SCHEDULES.index(current["schedule"]),
+            format_func=SCHEDULE_LABELS.get,
+        )
+        day = st.selectbox("Day, for every week", WEEKDAYS, index=WEEKDAYS.index(current["schedule_day"]))
+        time = st.time_input("Time", value=datetime.time(hour, minute), step=60)
+        upcoming = next_run()
+        st.caption(
+            (f"Next run: {upcoming}. " if upcoming else "Not scheduled. ")
+            + "systemd runs it on this computer, so it must be on; a run missed while it was off happens "
+            "when it's back on. Logs: `journalctl --user -u jobradar.service`"
+        )
+        saved = st.form_submit_button("Save")
+
+    if saved:
+        time_text = time.strftime("%H:%M")
+        # Apply first and save only if it worked, so the settings never show a schedule systemd doesn't have.
+        try:
+            message = apply_schedule(schedule, day, time_text)
+        except ScheduleError as e:
+            st.sidebar.error(str(e))
+        else:
+            save_settings(schedule=schedule, schedule_day=day, schedule_time=time_text)
+            st.sidebar.success(f"Saved. {message}")
+
+
 def history_settings() -> None:
     """Sidebar form that clears the finished jobs, so the next run scores them again with the new settings."""
     count = len(all_seen())
@@ -274,6 +314,7 @@ def main() -> None:
     source_settings()
     keyword_settings()
     delivery_settings()
+    schedule_settings()
     history_settings()
 
     jobs = all_seen()

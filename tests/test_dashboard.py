@@ -1,9 +1,11 @@
+import datetime
 import os
 import sqlite3
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from src import scheduling
 from src.agents.graph import compile_graph
 from src.agents.state import initial_state
 from src.db.seen_jobs import all_seen, backup_path, clear_seen, mark_seen, seen_keys
@@ -292,6 +294,45 @@ def test_switching_back_to_every_match_remembers_k(db):
 
     assert "every strong match" in app.sidebar.success[0].value
     assert load_settings()["top_k"] == 3
+
+
+# Schedule in the sidebar
+
+def schedule_radio(app):
+    [radio] = [radio for radio in app.sidebar.radio if radio.form_id == "schedule"]
+    return radio
+
+
+def test_schedule_is_off_by_default(db):
+    app = run_app()
+    assert schedule_radio(app).value == "off"
+    assert any("Not scheduled" in caption.value for caption in app.sidebar.caption)
+
+
+def test_sidebar_installs_a_weekly_timer(db, systemd):
+    app = run_app()
+    schedule_radio(app).set_value("weekly")
+    [day] = [box for box in app.sidebar.selectbox if box.form_id == "schedule"]
+    day.select("Fri")
+    app.sidebar.time_input[0].set_value(datetime.time(18, 30))
+    click_save(app, "schedule")
+
+    assert "every Fri at 18:30" in app.sidebar.success[0].value
+    assert ("enable", "--now", "jobradar.timer") in systemd.commands
+    with open(os.path.join(scheduling.UNIT_DIR, "jobradar.timer"), encoding="utf-8") as f:
+        assert "OnCalendar=Fri *-*-* 18:30:00" in f.read()
+    settings = load_settings()
+    assert (settings["schedule"], settings["schedule_day"], settings["schedule_time"]) == ("weekly", "Fri", "18:30")
+
+
+def test_a_systemd_failure_saves_nothing(db, systemd, settings_file):
+    systemd.fail = True
+    app = run_app()
+    schedule_radio(app).set_value("daily")
+    click_save(app, "schedule")
+
+    assert "systemctl failed" in app.sidebar.error[0].value
+    assert not os.path.exists(settings_file)
 
 
 # Clearing the history

@@ -1,6 +1,6 @@
 # JobRadar AI 🎯
 
-An AI agent built with LangGraph that finds AI internships or PhD positions on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram, Gmail, or both.
+An AI agent built with LangGraph that finds AI internships or PhD positions on three French research job boards (Inria, CNRS, and CEA), scores them against my CV, drafts cover letters for strong matches, fact-checks those letters against the CV, and sends a ranked digest to Telegram, Gmail, or both. A web app shows the results, edits the settings, and starts a run with one click.
 
 Most steps run in a fixed order on purpose, so the agent stays predictable, cheap, and testable. The agentic part is the letter loop: the agent checks its own letter against the CV, and that check decides whether the letter goes back for revision, up to 2 times.
 
@@ -33,7 +33,7 @@ START
 - **Jobs are recorded only once they're handled:** failed scrapes, scores, letters, and Telegram sends are all retried on the next run.
 - **Key requirements are enforced in code:** whatever score the LLM returns, jobs with another contract type than the one searched for are capped at 40, jobs with no link to the candidate's experience at 60, and jobs in a new domain that use familiar methods at 79.
 - **Flagged sentences get deleted:** if a rewrite keeps a sentence the checker flagged, code removes it. The last revision round only deletes, so it can't add new claims.
-- **The LLM reports facts, code applies the rules:** the LLM reports each posting's contract type (internship, PhD, or other) and code compares it with the one searched for. The allowed types come from one list in `src/config.py`, so the scoring schema, the settings, and the dashboard can't disagree.
+- **The LLM reports facts, code applies the rules:** the LLM reports each posting's contract type (internship, PhD, or other) and code compares it with the one searched for. The allowed types come from one list in `src/config.py`, so the scoring schema, the settings, and the web app can't disagree.
 - **Failures stay contained:** one failed LLM call doesn't stop the batch, and one broken job board doesn't stop the others.
 - **Boilerplate is ignored when filtering:** each board repeats the same "about us" text on every offer, and Inria's mentions AI, so the keyword filter skips it. On CEA the filter also skips the lab description, which often mentions AI even when the internship doesn't.
 
@@ -46,10 +46,11 @@ START
 | Structured output | Pydantic + `with_structured_output()` |
 | Job history | SQLite |
 | Observability | LangSmith (optional) |
-| Notifications | Telegram Bot API, Gmail over SMTP |
-| Dashboard | Streamlit + Altair |
+| Notifications | Telegram Bot API, Gmail over SMTP (HTML email with a plain-text fallback) |
+| Web app | React + TypeScript + Vite + Tailwind CSS |
+| Web API | FastAPI |
 | Scraping | requests + BeautifulSoup |
-| Tests and CI | pytest + GitHub Actions |
+| Tests and CI | pytest + GitHub Actions (which also lints and builds the web app) |
 
 ---
 
@@ -63,35 +64,46 @@ pip install -r requirements.txt
 cp .env.example .env                                       # then fill in your keys (Gmail is optional)
 cp data/profile/example_profile.md data/profile/my_profile.md   # then replace with your CV
 
-python -m scheduler.run_daily
+cd web && npm ci && npm run build && cd ..             # builds the web app (needs Node.js 22)
+uvicorn src.api.main:app                                   # then open http://127.0.0.1:8000
 ```
 
-To get the digest by email, create a Gmail [App Password](https://myaccount.google.com/apppasswords) (it needs 2-Step Verification), put the address and the password in `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` in `.env`, and choose Gmail in the dashboard. A separate Gmail account for JobRadar keeps your own account out of it.
+To get the digest by email, create a Gmail [App Password](https://myaccount.google.com/apppasswords) (it needs 2-Step Verification), put the address and the password in `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` in `.env`, and tick Gmail in the web app's **Settings → Notifications**. A separate Gmail account for JobRadar keeps your own account out of it.
 
-The first run scores every matching job. Later runs only process new ones. A run sends a Telegram message even when nothing matches, so you can tell a quiet day from a broken pipeline. Each call runs the pipeline once; to run it automatically, see [Schedule](#schedule). Two runs never overlap: a run started while another is still going exits at once.
+The first run scores every matching job. Later runs only process new ones. A run sends a digest even when nothing matches, so you can tell a quiet day from a broken pipeline. Press **▶ Run now** in the web app to run the pipeline once (or run `python -m scheduler.run_daily` in a terminal); to run it automatically, see [Schedule](#schedule). Two runs never overlap: a run started while another is still going exits at once.
 
-## Dashboard
+## Web app
 
-A page showing every scored job: its source, the LLM's score against the final score, the rationale, skills, and letter draft. It uses saved results, so it makes no API calls.
+A React app served by a small FastAPI API (`src/api/main.py`). The API only calls the same functions the pipeline uses, so the rules for valid settings live in one place.
 
-The sidebar sets up the next run:
+- **Jobs:** every scored job, with a chart of the LLM's score against the final score after the caps, a searchable list, and each job's rationale, skills, letter draft (with a Copy button), and any points to check.
+- **▶ Run now:** starts a run in the background and shows its log live; the new jobs appear when it ends. The run is a separate process, so it keeps going if the page is closed. It uses the same lock as the timer, so the button can't start a second run, and a run started by the timer shows up too.
+- **🌙 / ☀️:** light or dark mode. It follows the system setting until you choose, then remembers your choice.
+
+The **Settings** page sets up the next run. Each card saves on its own:
 
 - **Contract type:** an internship or a PhD position. CNRS and CEA filter on it in their own search forms; CEA publishes its PhD offers on another site, so PhD searches skip it. Inria has no such filter, so a job title there must contain one of the contract type's role keywords, such as "stage" or "M2" for internships and "PhD" or "thèse" for PhD positions. These come from the contract type in `src/config.py` and aren't a separate setting, so they can never disagree with it.
 - **Job sources:** which job boards to scrape.
 - **Search keywords:** the domain keywords a job's title or description must match before it reaches the LLM, one per line. Keywords in capitals, such as "AI", match only in capitals, so "AI" doesn't match the French "j'ai".
 - **Letters:** a letter for every strong match (70 or more), or only for the best K, from 1 to 50. Each letter costs several LLM calls (draft, claim check, revisions), so a small K makes runs cheaper. With the best K, the other strong matches aren't recorded: the next run scores them again and they compete with the new jobs, and the digest says how many are waiting. A job that never makes the top K is scored again on every run while it's still listed.
-- **Notifications:** Telegram (the default), Gmail, or both. A job counts as sent once any chosen channel delivers it, so if Telegram is down but Gmail works, it isn't sent again the next day; if every channel fails, it's retried. Gmail sends the whole digest, letters included, as one email to the address in `.env`. The form warns when a chosen channel has no credentials there.
+- **Notifications:** Telegram (the default), Gmail, or both. A job counts as sent once any chosen channel delivers it, so if Telegram is down but Gmail works, it isn't sent again the next day; if every channel fails, it's retried. Gmail sends the whole digest, letters included, as one designed HTML email to the address in `.env`, with a plain-text version for mail apps that don't show HTML. The card warns when a chosen channel has no credentials there.
 - **Schedule:** off, every day, or every week at a chosen time; see [Schedule](#schedule).
+- **History:** see below.
 
-The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the domain keywords in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled. To apply new settings to them, **Clear history** in the sidebar deletes the saved jobs, so the next run scores every listed job again and drafts new letters, which costs OpenAI credit. It asks for confirmation and first copies the database to `data/seen_jobs.backup.sqlite3`; to undo, copy that file back to `data/seen_jobs.sqlite3`.
+The settings are saved in `data/settings.json`. Each setting that's missing or invalid falls back to its default: internships, every board, and the domain keywords in `src/config.py`. Changing the settings doesn't rescore jobs that earlier runs already handled. To apply new settings to them, **Clear history** deletes the saved jobs, so the next run scores every listed job again and drafts new letters, which costs OpenAI credit. It asks for confirmation and first copies the database to `data/seen_jobs.backup.sqlite3`; to undo, copy that file back to `data/seen_jobs.sqlite3`.
+
+The API has no login, so it only listens on this computer (`127.0.0.1`). It also has no CORS setup on purpose, so other websites open in your browser can't call it.
+
+To work on the web app with live reload, run the API and Vite's dev server side by side; Vite forwards `/api` requests to the API:
 
 ```bash
-python -m streamlit run dashboard/app.py
+uvicorn src.api.main:app --reload       # terminal 1
+cd web && npm run dev                   # terminal 2, then open http://localhost:5173
 ```
 
 ## Schedule
 
-The dashboard's **Schedule** form runs the pipeline every day or every week at a chosen time, on Linux. The dashboard can't run it itself, because Streamlit only runs while its page is open, so the form installs a systemd user timer in `~/.config/systemd/user/` (no `sudo` needed):
+The **Schedule** card runs the pipeline every day or every week at a chosen time, on Linux. The web app can't do it itself, because it only runs while its server is up, so the card installs a systemd user timer in `~/.config/systemd/user/` (no `sudo` needed):
 
 - `jobradar.timer` wakes up at the chosen time, and `jobradar.service` runs `python -m scheduler.run_daily`.
 - The computer must be on. A run missed while it was off happens as soon as it's back on (`Persistent=true`).
@@ -106,11 +118,12 @@ User timers run while you're logged in. To run them when you're logged out too, 
 
 ## Tests
 
-The tests run the real graph with the LLM, Telegram, and the job boards faked, so they need no API keys and cost nothing.
+The tests run the real graph with the LLM, Telegram, Gmail, systemd, and the job boards faked, so they need no API keys, cost nothing, and never touch your settings or job history. The API is tested with FastAPI's `TestClient`, and a run started from the tests is never a real one.
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
+cd web && npm run lint && npm run build   # the web app: lint and type-check
 ```
 
 ## Measuring scoring quality
@@ -156,11 +169,11 @@ The first prototype run, on June 25, 2026, scraped and scored 153 Inria jobs, dr
 - [x] Ranked Telegram digest
 - [x] Gmail as a second channel
 - [x] Tests and CI
-- [x] Results dashboard
-- [x] Choose the job sources in the dashboard
-- [x] Edit the search keywords in the dashboard
-- [x] Choose the contract type in the dashboard (internship or PhD)
-- [x] Clear the job history from the dashboard
+- [x] Results dashboard, now a React + FastAPI web app
+- [x] Choose the job sources, search keywords, and contract type (internship or PhD) in the web app
+- [x] Clear the job history from the web app
+- [x] Start a run from the web app, with a live log
+- [x] Designed HTML email digest
 - [x] Letters for every strong match or only the best K
 - [ ] Label jobs and publish scoring results
 - [x] Re-measure runtime and cost

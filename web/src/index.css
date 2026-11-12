@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* The two score colours, kept from the Streamlit chart: they pass colour-blindness and contrast checks. */
+@theme {
+  --color-final: #2a78d6;
+  --color-llm: #d95926;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased dark:bg-slate-950 dark:text-slate-200;
+}

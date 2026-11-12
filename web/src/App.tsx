@@ -73,7 +73,7 @@ export default function App() {
           </p>
         )}
         {!error && (!options || !settings || !jobs) && <p className="text-slate-500">Loading…</p>}
-        {options && settings && jobs && tab === 'jobs' && <JobsPage jobs={jobs} options={options} />}
+        {options && settings && jobs && tab === 'jobs' && <JobsPage jobs={jobs} options={options} running={run.running} onRun={run.start} />}
         {options && settings && jobs && tab === 'settings' && (
           <SettingsPage
             options={options}

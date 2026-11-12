@@ -5,7 +5,17 @@ import JobsTable from '../components/JobsTable'
 import ScoreChart from '../components/ScoreChart'
 import StatTiles from '../components/StatTiles'
 
-export default function JobsPage({ jobs, options }: { jobs: Job[]; options: Options }) {
+export default function JobsPage({
+  jobs,
+  options,
+  running,
+  onRun,
+}: {
+  jobs: Job[]
+  options: Options
+  running: boolean
+  onRun: () => void
+}) {
   // The selected job is kept by key, and the best job is shown until the user picks one.
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const selected = jobs.find((job) => job.key === selectedKey) ?? jobs[0]
@@ -14,9 +24,10 @@ export default function JobsPage({ jobs, options }: { jobs: Job[]; options: Opti
     return (
       <div className="card p-8 text-center">
         <p className="font-medium">No results yet.</p>
-        <p className="mt-1 text-sm text-slate-500">
-          Run the pipeline with <code className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800">python -m scheduler.run_daily</code>
-        </p>
+        <p className="mt-1 text-sm text-slate-500">Run the pipeline to find and score new jobs.</p>
+        <button onClick={onRun} disabled={running} className="button-primary mt-4">
+          {running ? 'Running…' : '▶ Run now'}
+        </button>
       </div>
     )
   }

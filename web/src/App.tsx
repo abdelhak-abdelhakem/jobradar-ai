@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api, type Job, type Options, type Settings } from './api'
 import JobsPage from './pages/JobsPage'
+import SettingsPage from './pages/SettingsPage'
 
 type Tab = 'jobs' | 'settings'
+const TABS: Record<Tab, string> = { jobs: 'Jobs', settings: 'Settings' }
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('jobs')
@@ -31,17 +33,17 @@ export default function App() {
             <span className="text-lg font-semibold tracking-tight">JobRadar</span>
           </div>
           <nav className="flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
-            {(['jobs', 'settings'] as const).map((name) => (
+            {(Object.keys(TABS) as Tab[]).map((name) => (
               <button
                 key={name}
                 onClick={() => setTab(name)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize transition ${
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                   tab === name
                     ? 'bg-white shadow-sm dark:bg-slate-950'
                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
                 }`}
               >
-                {name}
+                {TABS[name]}
               </button>
             ))}
           </nav>
@@ -56,7 +58,15 @@ export default function App() {
         )}
         {!error && (!options || !settings || !jobs) && <p className="text-slate-500">Loading…</p>}
         {options && settings && jobs && tab === 'jobs' && <JobsPage jobs={jobs} options={options} />}
-        {options && settings && jobs && tab === 'settings' && <p className="text-slate-500">Settings come next.</p>}
+        {options && settings && jobs && tab === 'settings' && (
+          <SettingsPage
+            options={options}
+            settings={settings}
+            jobCount={jobs.length}
+            onSaved={setSettings}
+            onCleared={() => setJobs([])}
+          />
+        )}
       </main>
     </div>
   )

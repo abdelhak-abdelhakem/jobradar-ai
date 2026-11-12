@@ -12,7 +12,7 @@ LLM_MAX_CONCURRENCY = 8
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROFILE_PATH = os.path.join(BASE_DIR, "data", "profile", "my_profile.md")
 SEEN_JOBS_DB = os.path.join(BASE_DIR, "data", "seen_jobs.sqlite3")
-SETTINGS_PATH = os.path.join(BASE_DIR, "data", "settings.json")   # written by the dashboard
+SETTINGS_PATH = os.path.join(BASE_DIR, "data", "settings.json")   # written by the web app
 RUN_LOCK_PATH = os.path.join(BASE_DIR, "data", "run.lock")        # held by a run, so two never overlap
 RUN_LOG_PATH = os.path.join(BASE_DIR, "data", "last_run.log")    # output of the last run started from the web app
 
@@ -63,7 +63,7 @@ DOMAIN_KEYWORDS = [
 # Inria titles PhD offers "PhD Position F/M ..." or "Doctorant F/H ...".
 PHD_ROLE_KEYWORDS = ["PhD", "Ph.D", "doctorant", "doctorante", "doctorat", "thèse", "contrat doctoral"]
 
-# The contract types a user can search for: name -> details. The single list the settings, the dashboard,
+# The contract types a user can search for: name -> details. The single list the settings, the web app,
 # and the scoring schema are built from.
 # site_codes holds each job board's own contract filter. A board missing from it has no such filter and is
 # skipped: CEA publishes its PhD offers on another site. Inria has no filter, so the role keywords do its job.

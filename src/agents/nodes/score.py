@@ -97,7 +97,7 @@ def score_job_node(state: JobRadarState) -> dict:
             failed += 1
             print(f"  [!] Could not score {job_key(job)}: {result!r}")
 
-    # Chosen once here, so a settings change in the dashboard during a run can't make the
+    # Chosen once here, so a settings change in the web app during a run can't make the
     # letter and notification steps disagree.
     top_k = settings["top_k"] if settings["delivery"] == "top_k" else None
     return {"scored_jobs": scored, "failed_scores": failed, "letter_keys": choose_for_letters(scored, top_k)}

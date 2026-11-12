@@ -1,5 +1,5 @@
 """
-User settings chosen in the dashboard, saved in data/settings.json.
+User settings chosen in the web app, saved in data/settings.json.
 A missing or broken file falls back to the defaults, so the pipeline always runs.
 Role keywords aren't a setting: they come from the contract type (config.CONTRACTS), so the two can't disagree.
 """

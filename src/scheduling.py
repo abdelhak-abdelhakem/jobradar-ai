@@ -1,7 +1,7 @@
 """
 Runs the pipeline on a schedule with a systemd user timer, on Linux.
 
-The dashboard can't do this itself: Streamlit only runs while its page is open. systemd always runs, so a
+The web app can't do this itself: it only runs while its server is up. systemd always runs, so a
 timer wakes up at the chosen time and starts jobradar.service, which runs scheduler/run_daily.py once.
 With Persistent=true, a run missed while the computer was off happens as soon as it's back on.
 
@@ -42,7 +42,7 @@ def on_calendar(schedule: str, day: str, time: str) -> str:
 
 
 def service_text() -> str:
-    # The Python that runs the dashboard has the project's packages, so the timer uses the same one.
+    # The Python that runs the web API has the project's packages, so the timer uses the same one.
     return f"""[Unit]
 Description=JobRadar: find, score, and send new job offers
 

@@ -1,4 +1,4 @@
-"""Records finished jobs and their results, so later runs skip them and the dashboard can show them."""
+"""Records finished jobs and their results, so later runs skip them and the web app can show them."""
 import json
 import os
 import sqlite3

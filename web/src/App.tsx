@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api, type Job, type Options, type Settings } from './api'
+import RunPanel from './components/RunPanel'
+import ThemeToggle from './components/ThemeToggle'
 import JobsPage from './pages/JobsPage'
 import SettingsPage from './pages/SettingsPage'
+import { useRun } from './useRun'
 
 type Tab = 'jobs' | 'settings'
 const TABS: Record<Tab, string> = { jobs: 'Jobs', settings: 'Settings' }
@@ -24,11 +27,19 @@ export default function App() {
       .catch(() => setError('Can’t reach the API. Start it with: uvicorn src.api.main:app --reload'))
   }, [])
 
+  // When a run ends, show its new jobs. The settings are reloaded too, for the timer's next run.
+  const run = useRun(() => {
+    Promise.all([api.jobs(), api.settings()]).then(([jobs, settings]) => {
+      setJobs(jobs)
+      setSettings(settings)
+    }, () => {})
+  })
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
+          <div className="mr-auto flex items-center gap-2">
             <img src="/favicon.svg" alt="" className="size-7" />
             <span className="text-lg font-semibold tracking-tight">JobRadar</span>
           </div>
@@ -47,10 +58,15 @@ export default function App() {
               </button>
             ))}
           </nav>
+          <button onClick={run.start} disabled={run.running} className="button-primary">
+            {run.running ? 'Running…' : '▶ Run now'}
+          </button>
+          <ThemeToggle />
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
+        {run.visible && <RunPanel status={run.status} error={run.error} onClose={run.hide} />}
         {error && (
           <p className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
             {error}

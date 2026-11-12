@@ -53,6 +53,12 @@ export type Job = {
   seen_at: string
 }
 
+export type RunStatus = {
+  running: boolean
+  exit_code: number | null   // 0 when the last run started here worked; null while running or unknown
+  log: string | null         // the end of the last run's output
+}
+
 // An error the API explained, such as "Select at least one source.", so the page can show its message.
 export class ApiError extends Error {}
 
@@ -77,5 +83,7 @@ export const api = {
   updateSchedule: (schedule: Settings['schedule'], day: string, time: string) =>
     request<Settings & { message: string }>('PUT', '/api/schedule', { schedule, day, time }),
   jobs: () => request<Job[]>('GET', '/api/jobs'),
+  startRun: () => request<RunStatus>('POST', '/api/runs'),
+  runStatus: () => request<RunStatus>('GET', '/api/runs/latest'),
   clearHistory: () => request<{ deleted: number; backup: string | null }>('DELETE', '/api/history'),
 }

@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* dark: styles follow the "dark" class on <html>, set by the toggle, instead of only the system setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Native parts, such as the time picker and scrollbars, follow the theme too. */
+:root { color-scheme: light; }
+:root.dark { color-scheme: dark; }
+
 /* The two score colours, kept from the Streamlit chart: they pass colour-blindness and contrast checks. */
 @theme {
   --color-final: #2a78d6;

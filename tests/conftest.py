@@ -105,6 +105,14 @@ def settings_file(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def seen_db(monkeypatch, tmp_path):
+    """Every test gets its own job history, so no test reads or changes the real data/seen_jobs.sqlite3."""
+    path = str(tmp_path / "seen.sqlite3")
+    monkeypatch.setattr("src.config.SEEN_JOBS_DB", path)
+    return path
+
+
+@pytest.fixture(autouse=True)
 def run_lock(monkeypatch, tmp_path):
     """Every test gets its own lock file, so a test never waits on, or blocks, a real run."""
     path = str(tmp_path / "run.lock")
@@ -178,7 +186,6 @@ def world(monkeypatch, tmp_path):
 
     profile = tmp_path / "profile.md"
     profile.write_text("# Abdelhak\nPython, NLP.", encoding="utf-8")
-    monkeypatch.setattr("src.config.SEEN_JOBS_DB", str(tmp_path / "seen.sqlite3"))
     monkeypatch.setattr(score, "PROFILE_PATH", str(profile))
 
     monkeypatch.setattr("src.agents.nodes.scrape.get_inria_jobs", lambda **keywords: fake.jobs)

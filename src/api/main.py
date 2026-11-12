@@ -4,6 +4,9 @@ so the rules (which settings are valid, how the schedule is installed) live in o
 
   uvicorn src.api.main:app --reload
 
+Once the web app is built (cd web && npm run build), this also serves it, so one command runs everything:
+open http://127.0.0.1:8000. During frontend work, `npm run dev` serves it with live reload instead.
+
 It has no login, so it must only listen on this computer (uvicorn's default, 127.0.0.1). It also has no CORS
 setup on purpose: browsers then refuse JSON requests from other websites, so a page you visit can't change
 your settings or clear your history through it.
@@ -12,6 +15,7 @@ import os
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 from src import config
@@ -139,3 +143,15 @@ def post_run() -> dict:
 @app.get("/api/runs/latest")
 def get_run() -> dict:
     return run_status()
+
+
+WEB_DIST = os.path.join(config.BASE_DIR, "web", "dist")   # the built web app
+
+
+def serve_frontend(app: FastAPI, dist: str) -> None:
+    """Serves the built web app at /. Mounted last, so the /api routes above always win."""
+    if os.path.isdir(dist):
+        app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")
+
+
+serve_frontend(app, WEB_DIST)

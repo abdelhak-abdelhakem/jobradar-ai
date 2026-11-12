@@ -5,6 +5,7 @@ The autouse fixtures in conftest.py give every test its own settings file, job h
 import json
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src import config
@@ -184,3 +185,27 @@ def test_other_websites_cannot_call_the_api(client):
     })
 
     assert "access-control-allow-origin" not in response.headers
+
+
+# Serving the built web app
+
+def test_the_built_web_app_is_served_next_to_the_api(tmp_path):
+    (tmp_path / "index.html").write_text("<h1>JobRadar</h1>")
+    app = FastAPI()
+
+    @app.get("/api/ping")
+    def ping():
+        return {"ok": True}
+
+    main.serve_frontend(app, str(tmp_path))
+    client = TestClient(app)
+
+    assert client.get("/").text == "<h1>JobRadar</h1>"
+    assert client.get("/api/ping").json() == {"ok": True}   # the API routes still win
+
+
+def test_without_a_build_only_the_api_is_served(tmp_path):
+    app = FastAPI()
+    main.serve_frontend(app, str(tmp_path / "missing"))
+
+    assert TestClient(app).get("/").status_code == 404

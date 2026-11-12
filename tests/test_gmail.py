@@ -16,7 +16,16 @@ def test_email_is_sent_to_yourself_over_ssl(smtp):
     [message] = smtp.sent
     assert message["Subject"] == "JobRadar digest"
     assert message["From"] == message["To"] == "bot@gmail.com"
-    assert message.get_content().strip() == "Three new jobs."
+    assert message.get_content().strip() == "Three new jobs."   # text only: no HTML was given
+
+
+def test_html_is_sent_with_a_plain_text_fallback(smtp):
+    assert gmail.send_email("Digest", "Plain version", "<p>HTML version</p>") is True
+
+    [message] = smtp.sent
+    assert message.get_content_type() == "multipart/alternative"
+    assert message.get_body(("plain",)).get_content().strip() == "Plain version"
+    assert message.get_body(("html",)).get_content().strip() == "<p>HTML version</p>"
 
 
 @pytest.mark.parametrize("missing", ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"])

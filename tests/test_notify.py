@@ -1,7 +1,7 @@
 """The digest every channel sends. build_digest is pure, so these tests need no fakes."""
 import pytest
 
-from conftest import make_job, make_match
+from conftest import email_part, make_job, make_match
 
 from src.agents.nodes.notify import ChannelResult, Digest, build_digest, plural, send_gmail, send_telegram
 from src.agents.state import initial_state
@@ -96,7 +96,7 @@ def test_one_email_holds_the_summary_and_every_letter(smtp):
     assert result == ChannelResult(summary_sent=True, delivered={"inria:1", "inria:2"})
     [email] = smtp.sent
     assert email["Subject"] == "JobRadar: 2 strong matches"
-    text = email.get_content()
+    text = email_part(email)
     assert text.index("Letter for Best") < text.index("Letter for Good")   # best first
     assert '"I know audio.": Not in the CV.' in text
     assert "https://jobs.example/2" in text
@@ -111,16 +111,58 @@ def test_an_empty_digest_still_sends_an_email(smtp):
     send_gmail(Digest(scored_count=4, retries=0, chosen=0, waiting=0, jobs=[]))
     [email] = smtp.sent
     assert email["Subject"] == "JobRadar: no matches today"
-    assert "No matches today." in email.get_content()
+    assert "No matches today." in email_part(email)
 
 
 def test_letters_are_sent_as_written_not_html_escaped(smtp):
     digest = build_digest(state_with([scored("1", "R&D <AI>", 80)], ["inria:1"], {"inria:1": "R&D at <Lab> & co"}))
     send_gmail(digest)
-    text = smtp.sent[0].get_content()
+    text = email_part(smtp.sent[0])
     assert "R&D at <Lab> & co" in text and "&amp;" not in text
 
 
 @pytest.mark.parametrize("count, expected", [(0, "0 jobs"), (1, "1 job"), (2, "2 jobs")])
 def test_plural(count, expected):
     assert plural(count, "job", "jobs") == expected
+
+
+# The HTML version, sent in the same email as the text
+
+def test_the_email_has_a_designed_html_version_too(smtp):
+    send_gmail(two_job_digest())
+
+    html = email_part(smtp.sent[0], "html")
+    assert html.index("Letter for Best") < html.index("Letter for Good")   # best first, like the text
+    assert 'href="https://jobs.example/2"' in html
+    assert "I know audio." in html and "Not in the CV." in html
+    assert "nothing was sent to employers" in html
+
+
+def test_scraped_text_cannot_inject_html(smtp):
+    # Titles and letters come from job sites and the LLM, so they must be shown as text, never run.
+    digest = build_digest(state_with(
+        [scored("1", "<script>alert(1)</script>", 80)], ["inria:1"], {"inria:1": "R&D <img src=x onerror=1>"},
+    ))
+    send_gmail(digest)
+
+    html = email_part(smtp.sent[0], "html")
+    assert "<script>" not in html and "<img" not in html
+    assert "&lt;script&gt;" in html and "R&amp;D &lt;img" in html
+
+
+def test_letter_paragraphs_keep_their_breaks(smtp):
+    digest = build_digest(state_with([scored("1", "A", 80)], ["inria:1"],
+                                     {"inria:1": "Dear team,\n\nFirst line\nsecond line\n\nAbdelhak"}))
+    send_gmail(digest)
+
+    html = email_part(smtp.sent[0], "html")
+    assert ">Dear team,</p>" in html
+    assert "First line<br>second line" in html
+
+
+def test_an_empty_digest_has_an_html_version_too(smtp):
+    send_gmail(Digest(scored_count=4, retries=1, chosen=0, waiting=0, jobs=[]))
+
+    html = email_part(smtp.sent[0], "html")
+    assert "No new strong matches" in html
+    assert "1 job failed and will be tried again on the next run." in html

@@ -8,6 +8,7 @@ can count as finished when any channel delivered it.
 from dataclasses import dataclass, field
 from html import escape
 
+from src.agents.nodes.email_html import render_email_html
 from src.agents.state import JobRadarState, LetterIssue, ScoredJob, job_key, strong_matches
 from src.db.seen_jobs import SeenJob, mark_seen
 from src.settings import load_settings
@@ -128,7 +129,8 @@ def send_telegram(digest: Digest) -> ChannelResult:
     return result
 
 
-# How to send it by email: one plain-text email with everything, since email has no length limit
+# How to send it by email: one email with everything, since email has no length limit. It holds a designed
+# HTML version (email_html.py) and this plain-text one, for mail apps that don't show HTML.
 
 def email_subject(digest: Digest) -> str:
     if not digest.jobs:
@@ -154,7 +156,8 @@ def email_text(digest: Digest) -> str:
 
 def send_gmail(digest: Digest) -> ChannelResult:
     """Sends the whole digest as one email, so every job arrives, or none does."""
-    if send_email(email_subject(digest), email_text(digest)):
+    html = render_email_html(digest, _summary_sentences(digest))
+    if send_email(email_subject(digest), email_text(digest), html):
         return ChannelResult(summary_sent=True, delivered={job.key for job in digest.jobs})
     return ChannelResult(summary_sent=False)
 

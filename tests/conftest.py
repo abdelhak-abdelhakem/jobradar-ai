@@ -31,6 +31,11 @@ def make_match(score_value=80, contract_type="internship", domain_fit="direct") 
     )
 
 
+def email_part(message, kind="plain") -> str:
+    """The text or HTML part of a sent email."""
+    return message.get_body((kind,)).get_content()
+
+
 class FakeResponse:
     def __init__(self, status_code=200, payload=None):
         self.status_code = status_code

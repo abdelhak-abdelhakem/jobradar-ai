@@ -1,7 +1,7 @@
 """Runs the real graph end to end, with the LLM, Telegram, and the job board faked."""
 import fcntl
 
-from conftest import make_job, make_match
+from conftest import email_part, make_job, make_match
 from langchain_core.prompts import PromptTemplate
 
 from src.agents.nodes import score
@@ -387,7 +387,7 @@ def test_gmail_only_sends_one_email_and_no_telegram_message(world, smtp):
 
     assert world.sent == []
     [email] = smtp.sent
-    assert world.letter in email.get_content()
+    assert world.letter in email_part(email)
     assert seen_keys() == {"inria:1"}
     assert result["digest_sent"] is True
 

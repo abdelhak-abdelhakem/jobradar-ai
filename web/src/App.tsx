@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type Job, type Options, type Settings } from './api'
+import JobsPage from './pages/JobsPage'
 
 type Tab = 'jobs' | 'settings'
 
@@ -54,11 +55,8 @@ export default function App() {
           </p>
         )}
         {!error && (!options || !settings || !jobs) && <p className="text-slate-500">Loading…</p>}
-        {options && settings && jobs && (
-          <p className="text-slate-500">
-            Connected: {jobs.length} jobs saved, looking for {settings.contract_type}. The {tab} page comes next.
-          </p>
-        )}
+        {options && settings && jobs && tab === 'jobs' && <JobsPage jobs={jobs} options={options} />}
+        {options && settings && jobs && tab === 'settings' && <p className="text-slate-500">Settings come next.</p>}
       </main>
     </div>
   )

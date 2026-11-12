@@ -9,3 +9,22 @@
 body {
   @apply bg-slate-50 text-slate-800 antialiased dark:bg-slate-950 dark:text-slate-200;
 }
+
+/* Small building blocks used on every page, so each component doesn't repeat the same long class lists. */
+@layer components {
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+  }
+  .field {
+    @apply rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-950;
+  }
+  .button {
+    @apply rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700;
+  }
+  .button-primary {
+    @apply rounded-lg bg-final px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50;
+  }
+  .label {
+    @apply mb-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400;
+  }
+}

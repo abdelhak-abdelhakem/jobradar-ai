@@ -3,7 +3,7 @@ import smtplib
 import pytest
 from langchain_core.runnables import RunnableLambda
 
-from src import scheduling
+from src import runs, scheduling
 from src.agents.nodes import draft_letter, score
 from src.agents.state import JobMatch, LetterCheck, UnsupportedClaim
 from src.utils import gmail, telegram
@@ -117,7 +117,40 @@ def run_lock(monkeypatch, tmp_path):
     """Every test gets its own lock file, so a test never waits on, or blocks, a real run."""
     path = str(tmp_path / "run.lock")
     monkeypatch.setattr("src.config.RUN_LOCK_PATH", path)
+    monkeypatch.setattr("src.config.RUN_LOG_PATH", str(tmp_path / "last_run.log"))
     return path
+
+
+class FakeProcess:
+    """Stands in for a run's process. exit_code stays None while it "runs"; set it to finish the run."""
+
+    def __init__(self, log):
+        self.log = log
+        self.exit_code = None
+
+    def poll(self):
+        return self.exit_code
+
+
+class FakeLauncher:
+    """Records the runs the API starts instead of starting real ones, which would call OpenAI."""
+
+    def __init__(self):
+        self.processes = []
+
+    def __call__(self, log):
+        log.write("Scraping Inria...\n")
+        self.processes.append(FakeProcess(log))
+        return self.processes[-1]
+
+
+@pytest.fixture(autouse=True)
+def launcher(monkeypatch):
+    """Every test gets a fake launcher and no previous run, so no test starts a real pipeline run."""
+    fake = FakeLauncher()
+    monkeypatch.setattr(runs, "launch", fake)
+    monkeypatch.setattr(runs, "_process", None)
+    return fake
 
 
 class FakeSystemd:

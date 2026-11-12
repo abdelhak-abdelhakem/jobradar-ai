@@ -14,6 +14,7 @@ PROFILE_PATH = os.path.join(BASE_DIR, "data", "profile", "my_profile.md")
 SEEN_JOBS_DB = os.path.join(BASE_DIR, "data", "seen_jobs.sqlite3")
 SETTINGS_PATH = os.path.join(BASE_DIR, "data", "settings.json")   # written by the dashboard
 RUN_LOCK_PATH = os.path.join(BASE_DIR, "data", "run.lock")        # held by a run, so two never overlap
+RUN_LOG_PATH = os.path.join(BASE_DIR, "data", "last_run.log")    # output of the last run started from the web app
 
 # Scoring
 MATCH_SCORE_THRESHOLD = 70      # at or above this, a job gets a letter and a notification

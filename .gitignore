@@ -17,6 +17,7 @@ data/*.sqlite3
 data/*.csv
 data/settings.json
 data/run.lock
+data/last_run.log
 
 # IDEs & OS Files
 .vscode/

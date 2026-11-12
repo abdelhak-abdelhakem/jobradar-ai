@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from src import config
 from src.agents.nodes.scrape import FILTERED_BY_CONTRACT
 from src.db.seen_jobs import all_seen, backup_path, clear_seen
+from src.runs import RunInProgress, run_status, start_run
 from src.scheduling import ScheduleError, apply_schedule, next_run
 from src.settings import CHANNELS, DELIVERY_MODES, SCHEDULES, SOURCES, WEEKDAYS, load_settings, save_settings
 
@@ -123,3 +124,18 @@ def delete_history() -> dict:
     """Clears the finished jobs, so the next run scores them all again. The old ones are backed up first."""
     deleted = clear_seen()
     return {"deleted": deleted, "backup": os.path.basename(backup_path()) if deleted else None}
+
+
+@app.post("/api/runs", status_code=202)
+def post_run() -> dict:
+    """Starts a pipeline run in the background. 202 means accepted: it has started, not finished."""
+    try:
+        start_run()
+    except RunInProgress as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return run_status()
+
+
+@app.get("/api/runs/latest")
+def get_run() -> dict:
+    return run_status()
